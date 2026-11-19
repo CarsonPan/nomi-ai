@@ -1,6 +1,7 @@
 import { BUILTIN_CLI_ORDER } from '@nomi-ai/cli-catalog';
 import type { BuiltinCliId } from '@nomi-ai/cli-catalog';
 
+import type { DelegateChanges } from '../services/delegateChanges';
 import type { HarnessTraceEvent, HarnessUsage } from '../services/harnessClient';
 
 export interface ChatMessage {
@@ -30,7 +31,7 @@ export interface ChatMessage {
   /** 用户点了「停止生成」：content 为中止前已生成的部分（可为空），界面追加灰色提示 */
   stopped?: boolean;
   /**
-   * background：编程助手自发的一轮（后台子代理完成后主代理的跟进），不是对某条用户消息的回复；
+   * background：agent 自发的一轮（后台子代理完成后主代理的跟进），不是对某条用户消息的回复；
    * compaction：Nomi 对话的上下文压缩，content 是较早对话的摘要（services/compaction.ts）
    */
   origin?: 'background' | 'compaction';
@@ -46,7 +47,7 @@ export interface ChatMessage {
    * 下一轮原样发回（含工具调用与结果，前缀不变才能命中提示缓存）；没有工具调用时不存
    */
   steps?: string;
-  /** 本轮的工具调用 / 思考轨迹（与编程助手同一数据模型；Nomi 的 MCP / 知识库 / 搜索等工具调用） */
+  /** 本轮的工具调用 / 思考轨迹（与 agent 同一数据模型；Nomi 的 MCP / 知识库 / 搜索等工具调用） */
   trace?: HarnessTraceEvent[];
   /** 仅流式占位消息：模型的思考阶段是否正在执行。定稿消息不保存该状态。 */
   thinking?: boolean;
@@ -54,8 +55,13 @@ export interface ChatMessage {
   durationMs?: number;
   /** 本轮 token 用量（上游返回时才有） */
   usage?: HarnessUsage;
-  /** 用户用 `/cli` 指定这条需求交给哪个编程助手（docs/development/coding-agents.md） */
+  /** 用户用 `/cli` 指定这条需求交给哪个 agent（docs/development/coding-agents.md） */
   delegateTo?: BuiltinCliId;
+  /**
+   * 委派结果消息（origin background）：子任务改了哪些文件、各增删多少行，
+   * 对话里用「已编辑 N 个文件」卡片打开每个文件的 Diff（services/delegateChanges.ts）
+   */
+  delegateChanges?: DelegateChanges;
   /** 用户消息附带的图片：只保存缩略图（原图只随本轮发送，不进历史） */
   images?: Array<{
     thumb: string;
@@ -65,10 +71,17 @@ export interface ChatMessage {
     /** 原图存进素材库后的地址（chat-asset://images/user-…）：可放大、复制，模型改图 / 参考时引用 */
     url?: string;
   }>;
+  /**
+   * 一轮进行中插入、已经交给模型的消息（Enter 插入，见 contexts/nomiSteer）：界面上只在回复的时间线里
+   * （不另起用户气泡），上下文里跟着回复走。临时补进对话记录的那条：
+   * 回复结束前应用被重启时它在对话里（不丢）；这一轮正常结束时按 id 删掉（它只在回复的轨迹里）。
+   * 正文以「你加入了」标记开头（services/history.STEER_TAG）。
+   */
+  steer?: boolean;
 }
 
 /** 对话所属后端：与 harness 后端一致；侧栏列表按此后端隔离 */
-/** 对话后端：Nomi 自己 + 内置编程助手（id 由 @nomi-ai/cli-catalog 生成） */
+/** 对话后端：Nomi 自己 + 内置 agent（id 由 @nomi-ai/cli-catalog 生成） */
 export type ConversationBackend = 'nomi' | BuiltinCliId;
 
 export const CONVERSATION_BACKENDS: readonly ConversationBackend[] = ['nomi', ...BUILTIN_CLI_ORDER];
@@ -98,7 +111,7 @@ export interface ChatSession {
   cliSessionId?: string;
   /**
    * Nomi 对话所在的项目（只用于 backend 'nomi'；CLI 会话的项目记在标签上）。项目的文件夹由内核实时取：
-   * Nomi 的文件工具在这些文件夹里用、命令在主文件夹里启动，委派的编程助手也在这个项目里开工。
+   * Nomi 的文件工具在这些文件夹里用、命令在主文件夹里启动，委派的 agent 也在这个项目里开工。
    * 缺省 = 没有项目（按已授权文件夹）。
    */
   projectId?: string;
@@ -110,6 +123,21 @@ export interface ChatSession {
   legacyId?: string;
   /** 内核按消息文件重建索引时找回的会话（元信息是按消息补的） */
   recovered?: boolean;
+  /**
+   * 待发列表里还没交出去的消息（回复期间 Enter 插入 / Ctrl+Enter 排队）：存在元信息里（内核原样保存），
+   * 应用中途重启（如更新）后挂回这个会话的待发列表。交出去 / 删除 / 撤回 / 合成发送之后同步改这里；
+   * 空了就删掉这个字段。见 services/pendingSendsStore。
+   */
+  pendingSends?: Array<{ id: string; text: string; mode: 'steer' | 'queue'; kb?: true }>;
+  /**
+   * 已经交给这一轮、回复还没结束的插入消息（存在元信息里，中途重启后补成用户消息）。
+   * 正常结束时清掉，它们只留在回复的轨迹里。见 contexts/chatTurn。
+   */
+  deliveredSteers?: {
+    reqId: string;
+    afterId: string;
+    items: Array<{ id: string; text: string; marker?: string }>;
+  };
 }
 
 export interface StreamResponse {

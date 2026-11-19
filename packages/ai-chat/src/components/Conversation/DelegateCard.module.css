@@ -1,4 +1,4 @@
-/* Nomi 派给编程助手的子任务卡片（docs/development/coding-agents.md） */
+/* Nomi 派给 agents 的子任务卡片（docs/development/coding-agents.md） */
 .group {
   display: flex;
   flex-direction: column;
@@ -112,6 +112,7 @@
   white-space: nowrap;
   color: var(--cd-color-text-muted);
   font-size: var(--cd-font-size-xs);
+  user-select: none;
 }
 .body {
   display: flex;

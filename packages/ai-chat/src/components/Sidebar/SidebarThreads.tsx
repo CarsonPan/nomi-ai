@@ -26,12 +26,17 @@ interface SidebarThreadsProps {
   headerActions: React.ReactNode;
   isDev: boolean;
   view: ConversationListView;
+  bins: Record<string, string | null>;
+  onProjectPeek?: Groups['onProjectPeek'];
+  onHideProjectPeek?: Groups['onHideProjectPeek'];
   listLabel: string;
   listOpen: boolean;
   onToggleList: () => void;
   ordered: Meta[];
   tabById: Map<string, HarnessTabMeta>;
   runningIds: Set<string>;
+  /** 刚跑完一轮、还没点进去看的 Nomi 会话 id */
+  doneIds: Set<string>;
   renamingId: string | null;
   showIcon: boolean;
   histVisible: boolean;
@@ -61,12 +66,16 @@ export const SidebarThreads: React.FC<SidebarThreadsProps> = ({
   headerActions,
   isDev,
   view,
+  bins,
+  onProjectPeek,
+  onHideProjectPeek,
   listLabel,
   listOpen,
   onToggleList,
   ordered,
   tabById,
   runningIds,
+  doneIds,
   renamingId,
   showIcon,
   histVisible,
@@ -93,7 +102,10 @@ export const SidebarThreads: React.FC<SidebarThreadsProps> = ({
         activeId={activeId}
         rows={rows}
         headerActions={headerActions}
-        hideEmpty={isDev && view === 'by-endpoint'}
+        canPickBackend={isDev && view === 'all'}
+        bins={bins}
+        onProjectPeek={onProjectPeek}
+        onHideProjectPeek={onHideProjectPeek}
       />
     )}
     {!grouped && (
@@ -116,6 +128,7 @@ export const SidebarThreads: React.FC<SidebarThreadsProps> = ({
           active={c.id === activeId}
           tab={c.tabId ? tabById.get(c.tabId) : undefined}
           running={c.tabId ? undefined : runningIds.has(c.id)}
+          done={c.tabId ? undefined : doneIds.has(c.id)}
           onOpen={rows.open}
           onCtx={rows.onCtx}
           renaming={renamingId === c.id}
@@ -127,7 +140,13 @@ export const SidebarThreads: React.FC<SidebarThreadsProps> = ({
         />
       ))}
     {!grouped && listOpen && ordered.length > 100 && (
-      <div style={{ height: '100%', minHeight: 320 }} data-testid="conversation-list-virtual">
+      /*
+       * 超长列表（> 100）交给 react-window 只渲染可视行。
+       * 容器取「剩余高度」而不是 height:100%：上面还有分区标题等兄弟节点，
+       * 写 100% 会连它们的高度一起算进来，把内容顶出可视区；
+       * 外层 .threads 此时是 overflow: hidden（滚动交给内部 List），溢出的部分既滚不到也点不到。
+       */
+      <div className={styles.virtualHost} data-testid="conversation-list-virtual">
         <List
           rowCount={ordered.length}
           rowHeight={34}

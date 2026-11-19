@@ -1,5 +1,5 @@
 /**
- * 对话区主体：编程助手标签（空标签的欢迎语 / 会话）或 Nomi 主对话（欢迎屏 / 会话）。
+ * 对话区主体：agent 标签（空标签的欢迎语 / 会话）或 Nomi 主对话（欢迎屏 / 会话）。
  * Nomi 会话里只有 NomiConversation 订阅流式的最后一轮，其余部分不随每帧重渲染。
  */
 import { t } from '@nomi-ai/ui';
@@ -22,16 +22,13 @@ import {
 } from '../contexts/aiChatStore';
 import { useHarnessLive, type HarnessTabsCore } from '../contexts/HarnessTabsContext';
 import { useLiveWithGatewayRetry } from '../hooks/useGatewayRetry';
-import { useNomiModelStatus } from '../hooks/useNomiModelStatus';
 import { useTranscriptView } from '../hooks/useTranscriptView';
-import { useUserProfile } from '../hooks/useUserProfile';
 import {
   CONVERSATION_NAV_DEMO_EVENT,
   conversationNavDemoMessages,
 } from '../services/conversationNavDemo';
 import { derivedSwitchTip } from '../services/modelSwitchTip';
 import { nomiModelLabel, useGatewayState } from '../services/nomiModel';
-import { QUICK_PROMPT_TEXT, recommend } from '../services/recommendations';
 import type { TranscriptView } from '../services/transcriptView';
 import type { SlashHook } from '../slash/useSlashCommands';
 import type { ConvMessage } from '../types/conversation';
@@ -57,13 +54,20 @@ const NomiConversation: React.FC<Omit<React.ComponentProps<typeof ConversationVi
 };
 
 /** 重新生成 / 重试：找到这条助手消息之前的用户消息，从那里重发 */
-const precedingUser = <T extends { id: string; role: string }>(list: readonly T[], id: string) => {
+const precedingUser = <T extends { id: string; role: string; steer?: boolean }>(
+  list: readonly T[],
+  id: string,
+) => {
   const i = list.findIndex((m) => m.id === id);
-  for (let k = i - 1; k >= 0; k--) if (list[k]!.role === 'user') return list[k]!;
+  // 跳过中途插入的用户消息：重试从这一轮原来的那句开始
+  for (let k = i - 1; k >= 0; k--) {
+    const m = list[k]!;
+    if (m.role === 'user' && !m.steer) return m;
+  }
   return undefined;
 };
 
-/** 编程助手标签：没有消息时是欢迎语，否则是会话（Gemini 不信任工作目录时错误卡片上有「信任此文件夹」） */
+/** agent 标签：没有消息时是欢迎语，否则是会话（Gemini 不信任工作目录时错误卡片上有「信任此文件夹」） */
 const CliBody: React.FC<{
   tabs: HarnessTabsCore;
   isDev: boolean;
@@ -79,13 +83,14 @@ const CliBody: React.FC<{
     () =>
       buildCliSlots({
         cwd,
+        tab,
         ...(isDev ? traceActions({ kind: 'cli', tabId }) : {}),
         errorActions: (m, { retry }) =>
           m.geminiTrust ? (
             <GeminiTrustAction key={m.id} tabId={tabId} message={m} retry={retry} />
           ) : null,
       }),
-    [tabId, cwd, isDev],
+    [tabId, cwd, tab, isDev],
   );
   if (messages.length === 0 && !hasLive && slash.cards.length === 0 && tab.status === 'idle')
     return (
@@ -111,23 +116,13 @@ const CliBody: React.FC<{
   );
 };
 
-/** Nomi 主对话还没有消息：欢迎屏。还没有模型时快捷问题换成「添加模型」/「选择模型」，免得一点就报错 */
-const NomiWelcome: React.FC<{ onOpenModels: () => void }> = ({ onOpenModels }) => {
-  const { actions } = useAiChatActions();
-  const modelStatus = useNomiModelStatus();
-  // 示例问题按新手引导里选的职业与兴趣推荐
-  const quickPrompts = recommend(useUserProfile()).prompts;
-  const needsModel = modelStatus === 'none' || modelStatus === 'unassigned';
-  return (
-    <ConversationWelcome
-      title={t('ui.foundation.what-would-you-like-to-do-today')}
-      modelStatus={needsModel ? modelStatus : undefined}
-      onOpenModels={onOpenModels}
-      prompts={needsModel ? undefined : quickPrompts}
-      onPrompt={(id) => actions.sendMessage(t(QUICK_PROMPT_TEXT[id].prompt))}
-    />
-  );
-};
+/**
+ * Nomi 主对话还没有消息：欢迎屏（图标 + 标题 + 小标题）。
+ * 示例问题卡片与模型引导都在输入框一侧，由 App 层渲染。
+ */
+const NomiWelcome: React.FC = () => (
+  <ConversationWelcome title={t('ui.foundation.what-would-you-like-to-do-today')} />
+);
 
 export const ChatBody: React.FC<{
   tabs: HarnessTabsCore;
@@ -137,8 +132,7 @@ export const ChatBody: React.FC<{
   cliMessages: ConvMessage[];
   nomiMessages: ConvMessage[];
   slash: SlashHook;
-  onOpenModels: () => void;
-}> = ({ tabs, isDev, sessionKey, cliMessages, nomiMessages, slash, onOpenModels }) => {
+}> = ({ tabs, isDev, sessionKey, cliMessages, nomiMessages, slash }) => {
   const [navDemoSessionKey, setNavDemoSessionKey] = useState<string | null | undefined>(undefined);
   useEffect(() => {
     if (!isDev) return;
@@ -190,8 +184,7 @@ export const ChatBody: React.FC<{
         transcriptView={transcriptView}
       />
     );
-  if (displayNomiMessages.length === 0 && slash.cards.length === 0)
-    return <NomiWelcome onOpenModels={onOpenModels} />;
+  if (displayNomiMessages.length === 0 && slash.cards.length === 0) return <NomiWelcome />;
   return (
     <NomiConversation
       scopeId={sessionKey ?? `nomi:${firstMessageId ?? 'new'}`}

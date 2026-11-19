@@ -91,6 +91,8 @@ export function useSidebarSessions({
         list.find((x) => x.id === id) ?? (await ipc.listConversations()).find((x) => x.id === id);
       if (!meta) return;
       setCtx(null);
+      // 点开就是看过了：先把行首那个「已完成」点去掉（已经在看的会话不会重载历史）
+      actions.clearDone?.(id);
 
       if (meta.backend !== 'nomi' && meta.tabId) {
         const activated = tabs.activate(meta.tabId);
@@ -119,7 +121,11 @@ export function useSidebarSessions({
   );
 
   /** projectId：指定项目（项目行上的「新建」）；null = 不放进项目；缺省用新建菜单里选的项目 */
-  const createFor = async (backend: ConversationBackend, projectId?: string | null) => {
+  const createFor = async (
+    backend: ConversationBackend,
+    projectId?: string | null,
+    preset?: Parameters<Tabs['create']>[2],
+  ) => {
     setNewMenu(false);
     leaveRef.current?.();
     const pid = projectId === undefined ? (chosenProject ?? null) : projectId;
@@ -136,7 +142,7 @@ export function useSidebarSessions({
         return;
       }
       if (!tabs.available) return;
-      await tabs.create(backend, pid ?? undefined);
+      await tabs.create(backend, pid ?? undefined, preset);
       refresh();
     } catch (e) {
       onNotice?.(t('ui.cli-monitor.new-chat-failed', e instanceof Error ? e.message : String(e)));

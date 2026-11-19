@@ -10,7 +10,7 @@ body {
   -moz-osx-font-smoothing: grayscale;
   background: var(--cd-color-bg-gradient);
   color: var(--cd-color-text);
-  overflow: hidden;
+  overflow: clip;
   isolation: isolate;
 }
 
@@ -35,7 +35,7 @@ body {
   display: flex;
   /* 侧栏、标题栏与卡片外的底色连成一片（Codex 式），对话区是浮在上面的白色圆角卡片 */
   background: var(--cd-panel-bg-subtle);
-  overflow: hidden;
+  overflow: clip;
   position: relative;
   /* 自成层叠上下文：工作台背景层用负 z-index 垫在侧栏 / 主区 / 右栏之下 */
   isolation: isolate;
@@ -97,7 +97,7 @@ html[data-chat-bg] .ai-chat-app::before {
   border-radius: var(--cd-radius-xl) 0 var(--cd-radius-xl) 0;
   background: var(--cd-workspace-bg);
   box-shadow: var(--cd-shadow-workspace);
-  overflow: hidden;
+  overflow: clip;
 }
 html[data-platform] .workspace-card {
   /* 与顶栏直接相接，外阴影透过顶栏的透明背景向上延伸。 */
@@ -176,6 +176,11 @@ html[data-chat-bg] .workspace-card {
   align-self: stretch;
   border-top: none !important;
   border-left: none;
+}
+
+.main-content--with-changes:not(.main-content--side-max)
+  > [data-testid='side-workspace'][data-closing] {
+  pointer-events: none;
 }
 
 /* Codex 整页最右列：已更改文件栏（与 Sidebar / main-content 横排全高；宽度由分割线拖动） */
@@ -311,6 +316,30 @@ html[data-chat-bg] .workspace-card {
 }
 
 /* 欢迎空态：居中、干净卡片 */
+/*
+ * 空会话（新窗口 / 没发过消息）：欢迎区 + 聊天框 + 示例问题卡片 作为一整块在对话区垂直居中，
+ * 不再是「内容贴顶、输入框钉底」。欢迎区自身在中间，上面是图标 / 标题 / 小标题；
+ * 模型引导是输入框上的悬浮卡片，不占布局。
+ * 发过第一条消息后 data-empty 消失，自动回到「内容滚动 + 输入框钉底」的常规布局。
+ */
+.chat-column[data-empty] .chat-container {
+  flex: 0 1 auto;
+  justify-content: flex-end;
+  overflow: visible;
+}
+.chat-column[data-empty] .input-container {
+  flex: 0 1 auto;
+  border-top: none;
+  background: transparent;
+}
+.chat-column[data-empty] {
+  justify-content: center;
+}
+/* 空态下欢迎区不报满：跟输入框同宽同中线 */
+.chat-column[data-empty] .chat-container {
+  padding-bottom: 0;
+}
+
 /* 底部输入区：干净分隔，无发光动画 */
 .input-container {
   background: var(--cd-color-surface);
@@ -477,6 +506,12 @@ html[data-platform='darwin'] .app-window-controls {
   gap: var(--cd-space-2);
   padding: 0 var(--cd-space-2) 0 var(--cd-space-3);
   min-width: 0;
+  transition: left 0.22s var(--cd-ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-titlebar-main {
+    transition: none;
+  }
 }
 .app-titlebar[data-sidebar='collapsed'] {
   --cd-titlebar-main-left: 52px;

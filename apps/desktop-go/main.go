@@ -47,6 +47,7 @@ import (
 
 	"github.com/Cookieboty/nomi-ai/apps/desktop-go/internal/ai/runtime/igtools"
 	"github.com/Cookieboty/nomi-ai/apps/desktop-go/internal/contract"
+	"github.com/Cookieboty/nomi-ai/apps/desktop-go/internal/core/browserwindow"
 	"github.com/Cookieboty/nomi-ai/apps/desktop-go/internal/core/character"
 	"github.com/Cookieboty/nomi-ai/apps/desktop-go/internal/core/characterassets"
 	"github.com/Cookieboty/nomi-ai/apps/desktop-go/internal/core/chatassets"
@@ -92,7 +93,7 @@ func main() {
 		parse.WorkerMain()
 		return
 	}
-	// 编程助手拉起的桌面操作 MCP 桥接（--computer-mcp）：只转发 stdio，不起界面
+	// agent 拉起的桌面操作 MCP 桥接（--computer-mcp）：只转发 stdio，不起界面
 	if runComputerBridge() {
 		return
 	}
@@ -122,8 +123,9 @@ func main() {
 	hostports.Stage("logger-ready")
 	// 读登录 shell 的 PATH（不阻塞启动；探测 CLI 的异步路径会等它），读完再记住 npm 全局 bin
 	// （自定义 prefix 且 shell 里没配 PATH 时也能找到已装的 CLI；稍后再跑，不和启动抢资源）
-	// 同时读终端里的代理变量，开关（默认开）打开时加给编程助手子进程（cli/shellproxy.go）
+	// 同时读终端里的代理变量，开关（默认开）打开时加给 agent 子进程（cli/shellproxy.go）
 	cli.ConfigureShellProxy(userData, nil)
+	cli.ConfigureLaunchers(userData)
 	go mergeLoginShellPath()
 	// 这里只复制 2.0.4 文件（不碰钥匙串）；密钥迁移在桌面角色窗口出来后后台跑（secretGate）
 	if res, err := migrate.RunFiles(userData); err != nil {
@@ -233,7 +235,7 @@ func main() {
 	if bundle.Settings.Get().Mascot.Renderer == "rive" {
 		go assetsSvc.Ensure()
 	}
-	// 素材库：全部生成的图片（Nomi 的 image_generate、编程助手生成后复制过来的），删除移到废纸篓
+	// 素材库：全部生成的图片（Nomi 的 image_generate、agent 生成后复制过来的），删除移到废纸篓
 	chatAssetsLib := chatassets.New(chatassets.Deps{
 		ChatRoot:  filepath.Join(userData, "chat"),
 		TrashItem: trash.Item,
@@ -610,13 +612,13 @@ func main() {
 			return names
 		},
 	}))
-	// 持续任务的编程助手执行（docs/features/scheduling-calendar.md）：后台标签，默认直接在代码目录里改
+	// 持续任务的 agent 执行（docs/features/scheduling-calendar.md）：后台标签，默认直接在代码目录里改
 	// （别的分支做基线时用 worktree，验收时落地）；同一种任务复用会话；审批走任务收件箱
 	b8Tasks = b8.Tasks
 	taskCli := taskCliDeps(desktopSvc)
 	taskCli.EventsFor = b8.Tasks.EventBatch
 	b8.Tasks.RegisterExecutor("cli", tasks.NewCliExecutor(taskCli))
-	// 事件源：web / folder / github / app；编程助手的 tab-finished 在 wireHarness 之后接上
+	// 事件源：web / folder / github / app；agent 的 tab-finished 在 wireHarness 之后接上
 	registerTaskSources(b8)
 	b8.ApplyWorktree = taskApplyWorktree(desktopSvc)
 	// AI 运行时与门面就绪后再启动（记忆启动时把事实与摘要同步给门面）
@@ -786,6 +788,14 @@ func main() {
 	tabwindows.Register(router, tabwindows.New(func() tabwindows.Opener {
 		if o, ok := sh.(tabwindows.Opener); ok {
 			return o
+		}
+		return nil
+	}, func(event string, data any) { router.EmitTo(event, data, "chat") }))
+	// 内置浏览器窗口（browserWindow.*）：网页放在独立原生窗口里（不是 iframe，见 shell.BrowserHost）；
+	// 外壳没实现时 show 返回 unsupported，视图退到「在系统浏览器打开」
+	browserwindow.Register(router, browserwindow.New(func() shell.BrowserHost {
+		if h, ok := sh.(shell.BrowserHost); ok {
+			return h
 		}
 		return nil
 	}, func(event string, data any) { router.EmitTo(event, data, "chat") }))
@@ -1246,7 +1256,7 @@ const islandBridge = `<script>(() => {
   try { (window.webkit && webkit.messageHandlers.external || window.chrome && chrome.webview).postMessage('wails:runtime:ready'); } catch (e) {}
 })();</script>`
 
-// islandListsEndpoint：等你处理的列表里有这个编程助手的条目
+// islandListsEndpoint：等你处理的列表里有这个 agent 标签的条目
 func islandListsEndpoint(isl *island.Service, endpoint string) bool {
 	for _, p := range isl.Pending() {
 		if p.Endpoint == endpoint && endpoint != "" {
@@ -1451,7 +1461,7 @@ func desktopWindows(shp *shell.Shell, st *startup.Service, isl *island.Service) 
 		Island: func(n desktop.IslandNotice) bool {
 			notice := island.Notice{Kind: n.Kind, Title: n.Title, Body: n.Body, DurationMs: n.DurationMs,
 				Endpoint: n.Endpoint, Status: n.Status}
-			// 编程助手要权限：岛上「等你处理」的列表里会有这一条（带允许 / 拒绝），不再弹一条提醒。
+			// agent 要权限：岛上「等你处理」的列表里会有这一条（带允许 / 拒绝），不再弹一条提醒。
 			// 列表稍后才刷新（合并 150ms），等一下再看
 			if n.Kind == "agent" && n.Status == "attention" && n.Endpoint != "" && isl.Accepts(notice, false) {
 				go func() {

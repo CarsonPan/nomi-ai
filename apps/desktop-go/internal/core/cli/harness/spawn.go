@@ -22,8 +22,28 @@ func ResolveHarnessBin(backend string) string {
 	return cli.ResolveCliBinCached(backend)
 }
 
+// ResolveEffectiveHarnessBin returns the detected CLI binary, or the resolved custom launcher binary if enabled.
+func ResolveEffectiveHarnessBin(backend string) string {
+	if p := ResolveHarnessBin(backend); p != "" {
+		return p
+	}
+	if os.Getenv("NOMI_USE_MOCK_CLI") == "1" {
+		return ""
+	}
+	return cli.ResolveLauncherBin(backend)
+}
+
 func IsScript(bin string) bool {
 	return strings.HasSuffix(bin, ".mjs") || strings.HasSuffix(bin, ".js")
+}
+
+// resolveSessionBin replaces only the executable prefix, preserving the driver's protocol arguments.
+func resolveSessionBin(backend string, official bool) (string, []string) {
+	bin, prefix, err := cli.LauncherInvocation(backend, ResolveHarnessBin(backend), nil, official)
+	if err != nil {
+		throw(err.Error())
+	}
+	return bin, prefix
 }
 
 // CliTrap：CLI 子进程的 trace 钩子（nil = 无 trace）。

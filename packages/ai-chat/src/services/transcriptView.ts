@@ -1,9 +1,11 @@
 /**
  * 会话记录详细程度（Transcript view）。
  *
- * 与 Claude Code Desktop 的 Transcript view 对齐：
+ * 共有四种显示模式：
+ * - minimal（极简，新环境默认）：隐藏思考与工具表达，运行中只展示当前步骤进度与用时，
+ *   完成后将中间过渡文字、思考与工具收进顶部可展开行，下方只输出最终总结；
  * - normal（精简）：两段回复之间的工具调用按类型各合成一行（每段每类最多一行），不显示思考；
- * - thinking（显示思考，初始默认）：工具调用同样按类型各一行，思考合并成一块单独显示；
+ * - thinking（显示思考）：工具调用同样按类型各一行，思考合并成一块单独显示；
  * - verbose（详细）：每次工具调用单独一行，参数与输出、思考、子代理都默认展开。
  *
  * 设置分两层：
@@ -13,11 +15,16 @@
  * 这是界面偏好，不进 Go 内核的会话存储；保存在本机 localStorage。
  */
 
-export type TranscriptView = 'normal' | 'thinking' | 'verbose';
+export type TranscriptView = 'minimal' | 'normal' | 'thinking' | 'verbose';
 
-export const TRANSCRIPT_VIEWS: readonly TranscriptView[] = ['normal', 'thinking', 'verbose'];
+export const TRANSCRIPT_VIEWS: readonly TranscriptView[] = [
+  'minimal',
+  'normal',
+  'thinking',
+  'verbose',
+];
 
-export const DEFAULT_TRANSCRIPT_VIEW: TranscriptView = 'thinking';
+export const DEFAULT_TRANSCRIPT_VIEW: TranscriptView = 'minimal';
 
 const STORAGE_KEY = 'nomi.transcriptView.v1';
 /** 只保留最近使用的会话覆盖数，避免长期使用后 localStorage 无限增长 */
@@ -34,7 +41,7 @@ type Listener = () => void;
 const listeners = new Set<Listener>();
 
 function isTranscriptView(v: unknown): v is TranscriptView {
-  return v === 'normal' || v === 'thinking' || v === 'verbose';
+  return v === 'minimal' || v === 'normal' || v === 'thinking' || v === 'verbose';
 }
 
 function parse(raw: string | null): TranscriptViewState {
@@ -145,7 +152,7 @@ export function clearTranscriptView(sessionKey: string | null | undefined): void
 }
 
 /**
- * 编程助手标签的会话键（#313）：有 CLI 会话 id 时按「后端 + 会话 id」，关掉标签再从历史
+ * Agents 标签的会话键（#313）：有 CLI 会话 id 时按「后端 + 会话 id」，关掉标签再从历史
  * 打开（新标签 id、同一个会话）仍找得到同一份设置；还没有会话 id（新标签还没发第一条）时先按标签 id，
  * 拿到会话 id 后由 migrateTranscriptView 搬过去。分叉、新会话会得到新的会话 id，各自独立（跟随全局，不继承）。
  */

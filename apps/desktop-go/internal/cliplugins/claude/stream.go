@@ -14,6 +14,55 @@ import (
 type StreamState struct {
 	TextSeen    bool
 	LastContext *float64
+	LastError   string
+	// 权限被拒：Claude 的「自动」靠服务端分类器，请求经第三方网关时分类器不可达，
+	// 每个要检查的动作都会被拒（decision_reason_code=auto_mode_no_check_in_session）。
+	DeniedCode  string
+	DeniedTools []string
+	// 会话级提示（system/informational）：目前只有「auto 模式无法校验动作」带 tag。
+	NoticeCode string
+	NoticeText string
+}
+
+// isAutoModeBlockedText 检查错误文本或诊断信息是否指示 Claude auto 模式分类器不可用。
+func isAutoModeBlockedText(s string) bool {
+	if s == "" {
+		return false
+	}
+	lower := strings.ToLower(s)
+	return strings.Contains(lower, "auto mode can't check actions in this session") ||
+		strings.Contains(lower, "auto_mode_no_check_in_session") ||
+		strings.Contains(lower, "auto_mode_no_server_check")
+}
+
+func extractResultErrors(j *util.Obj) string {
+	if j == nil {
+		return ""
+	}
+	parts := []string{}
+	add := func(v any) {
+		switch x := v.(type) {
+		case string:
+			if s := strings.TrimSpace(x); s != "" {
+				parts = append(parts, s)
+			}
+		case *util.Obj:
+			if x != nil {
+				if s := strings.TrimSpace(util.Str(Coalesce(x.Get("message"), x.Get("error")))); s != "" {
+					parts = append(parts, s)
+				}
+			}
+		}
+	}
+	if arr, ok := j.Get("errors").([]any); ok {
+		for _, item := range arr {
+			add(item)
+		}
+	}
+	if len(parts) == 0 {
+		add(j.Get("error"))
+	}
+	return strings.Join(parts, "; ")
 }
 
 func anthropicRequestContext(u any) *float64 {
@@ -165,9 +214,12 @@ func ParseLine(line string, state *StreamState) []Ev {
 		out = append(out, sh.ImageEvent(msg.Get("content"), true, false)...)
 	case typ == "result":
 		ctxT, ctxW, model := claudeContext(j, state)
+		lastErr := ""
 		if state != nil {
+			lastErr = state.LastError
 			state.TextSeen = false
 			state.LastContext = nil
+			state.LastError = ""
 		}
 		var text string
 		if s, ok := j.Get("result").(string); ok {
@@ -183,16 +235,44 @@ func ParseLine(line string, state *StreamState) []Ev {
 		sub, subStr := j.Get("subtype").(string)
 		failed := j.Get("is_error") == true || (subStr && strings.HasPrefix(sub, "error"))
 		if failed {
-			msg := text
+			msg := strings.TrimSpace(text)
+			detail := extractResultErrors(j)
+			if detail == "" {
+				detail = lastErr
+			}
 			if msg == "" {
-				if j.Get("subtype") != nil {
+				switch {
+				case subStr && sub != "" && detail != "" && !strings.Contains(detail, sub):
+					msg = sub + ": " + detail
+				case detail != "":
+					msg = detail
+				case j.Get("subtype") != nil:
 					msg = JSString(j.Get("subtype"))
-				} else {
+				default:
 					msg = T("electron.common.claude-error")
 				}
 			}
+			// auto 模式在第三方网关下分类器不可用，所有要检查的动作都被拒 ——
+			// 把真正的原因说清楚，而不是只留一句 error_during_execution。
+			blocked := (state != nil && state.DeniedCode == "auto_mode_no_check_in_session") ||
+				isAutoModeBlockedText(msg) || isAutoModeBlockedText(detail)
+			if blocked {
+				msg = T("electron.common.auto-mode-cannot-check-actions")
+				if state != nil && len(state.DeniedTools) > 0 {
+					msg += " (" + strings.Join(state.DeniedTools, ", ") + ")"
+				}
+				if state != nil {
+					state.DeniedCode, state.DeniedTools = "", nil
+				}
+			} else if state != nil {
+				state.DeniedTools = nil
+			}
 			// 出错的一轮也带上会话 id：续接靠它（否则下一轮成了新会话）
-			out = append(out, WithOpt(O("type", "error", "message", msg), "sessionId", OptStr(j.Get("session_id"))))
+			errEv := O("type", "error", "message", msg)
+			if blocked {
+				errEv.Set("code", "auto_mode_no_check_in_session")
+			}
+			out = append(out, WithOpt(errEv, "sessionId", OptStr(j.Get("session_id"))))
 		} else {
 			image := sh.ImageMarkdown(j.Get("result"), true)
 			out = append(out, WithOpt(WithOpt(O("type", "done", "text", sh.TextWithImage(text, image)), "sessionId", StrOr(j.Get("session_id"))), "usage", usage))
@@ -204,8 +284,52 @@ func ParseLine(line string, state *StreamState) []Ev {
 			out = append(out, O("type", "session", "sessionId", *sid))
 		}
 	case typ == "system" && j.Get("subtype") == "api_retry":
+		if state != nil {
+			if e := strings.TrimSpace(util.Str(j.Get("error"))); e != "" {
+				state.LastError = e
+			}
+		}
 		out = append(out, WithOpt(O("type", "status", "kind", "retry"),
 			"attempt", sh.Num(j.Get("attempt")), "max", sh.Num(j.Get("max_retries")), "text", StrOr(j.Get("error"))))
+	case typ == "system" && j.Get("subtype") == "permission_denied":
+		// 权限系统抦了某个动作（auto 模式分类器不可用 / 用户拒绝 / 策略拒绝）。
+		// 以前整个事件被丢掉，用户只看到「跑着跑着失败了」。
+		tool := strings.TrimSpace(util.Str(j.Get("tool_name")))
+		code := strings.TrimSpace(util.Str(j.Get("decision_reason_code")))
+		if state != nil {
+			if code != "" {
+				state.DeniedCode = code
+			}
+			if tool != "" {
+				seen := false
+				for _, t := range state.DeniedTools {
+					if t == tool {
+						seen = true
+						break
+					}
+				}
+				if !seen {
+					state.DeniedTools = append(state.DeniedTools, tool)
+				}
+			}
+		}
+		ev := O("type", "permission-denied", "tool", tool)
+		if code != "" {
+			ev.Set("code", code)
+		}
+		if r := strings.TrimSpace(util.Str(j.Get("decision_reason"))); r != "" {
+			ev.Set("reason", r)
+		}
+		out = append(out, ev)
+	case typ == "system" && j.Get("subtype") == "informational":
+		// 会话级提示（Claude 自己说明，比如 auto 模式无法校验动作）。没有 tag 的是杂项提示，丢掉。
+		if tag := strings.TrimSpace(util.Str(j.Get("tag"))); tag != "" {
+			text := strings.TrimSpace(util.Str(j.Get("content")))
+			if state != nil {
+				state.NoticeCode, state.NoticeText = tag, text
+			}
+			out = append(out, O("type", "notice", "tag", tag, "text", text))
+		}
 	case typ == "system" && j.Get("subtype") == "status":
 		kind := "clear"
 		if j.Get("status") == "compacting" {
@@ -240,6 +364,11 @@ func ParseLine(line string, state *StreamState) []Ev {
 		// error carrying task_id instead of task_notification. Preserve the
 		// child lifecycle event so its card cannot remain stuck in running.
 		if ev := taskEvent(j); ev != nil {
+			rawErr := JSString(Coalesce(j.Get("error"), j.Get("message"), j.Get("summary"), ""))
+			if isAutoModeBlockedText(rawErr) {
+				ev.Set("code", "auto_mode_no_check_in_session")
+				ev.Set("summary", T("electron.common.auto-mode-cannot-check-actions"))
+			}
 			out = append(out, ev)
 			break
 		}
@@ -248,7 +377,12 @@ func ParseLine(line string, state *StreamState) []Ev {
 		if m != nil {
 			msg = JSString(m)
 		}
-		out = append(out, O("type", "error", "message", msg))
+		errEv := O("type", "error", "message", msg)
+		if isAutoModeBlockedText(msg) {
+			errEv.Set("message", T("electron.common.auto-mode-cannot-check-actions"))
+			errEv.Set("code", "auto_mode_no_check_in_session")
+		}
+		out = append(out, errEv)
 	case typ == "control_request":
 		reqID := util.Str(j.Get("request_id"))
 		req := util.AsObj(Coalesce(j.Get("request"), util.NewObj()))
@@ -316,8 +450,13 @@ func ParseLine(line string, state *StreamState) []Ev {
 					if errd {
 						status = "error"
 					}
-					out = append(out, WithOpt(WithOpt(O("type", "tool", "name", "tool", "status", status),
-						"detail", StrOr(c.Get("tool_use_id"))), "output", sh.OutputText(c.Get("content")), "parentId", parent))
+					outText := sh.OutputText(c.Get("content"))
+					ev := WithOpt(WithOpt(O("type", "tool", "name", "tool", "status", status),
+						"detail", StrOr(c.Get("tool_use_id"))), "output", outText, "parentId", parent)
+					if errd && outText != nil && isAutoModeBlockedText(*outText) {
+						ev.Set("code", "auto_mode_no_check_in_session")
+					}
+					out = append(out, ev)
 					out = append(out, sh.ImageEvent(c.Get("content"), true, false)...)
 				}
 			}
@@ -456,11 +595,22 @@ func taskEvent(j *util.Obj) Ev {
 	status, ok := sh.AgentEndStatus[JSString(Coalesce(statusValue, ""))]
 	if (sub == "task_notification" || sub == "task_updated" || sub == "task_progress" || sub == "error") && ok {
 		var sum *string
+		blocked := false
 		if s := OptStr(j.Get("summary")); s != nil {
-			x := Slice0(*s, 2000)
-			sum = &x
+			if isAutoModeBlockedText(*s) {
+				blocked = true
+				x := T("electron.common.auto-mode-cannot-check-actions")
+				sum = &x
+			} else {
+				x := Slice0(*s, 2000)
+				sum = &x
+			}
 		}
-		return WithOpt(O("type", "agent", "op", "end", "id", id, "status", status), "callId", OptStr(j.Get("tool_use_id")), "summary", sum, "usage", usage)
+		ev := WithOpt(O("type", "agent", "op", "end", "id", id, "status", status), "callId", OptStr(j.Get("tool_use_id")), "summary", sum, "usage", usage)
+		if blocked {
+			ev.Set("code", "auto_mode_no_check_in_session")
+		}
+		return ev
 	}
 	return nil
 }

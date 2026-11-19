@@ -16,10 +16,21 @@ import React, { memo, useContext, useEffect, useMemo, useRef, useState } from 'r
 import { joinFileAttachments, splitFileAttachments } from '../../services/fileAttachments';
 import { refLabel, useGatewayState } from '../../services/nomiModel';
 import type { ConvMessage } from '../../types/conversation';
-import { layoutBody, planBody, planLength, sliceBody } from '../../utils/convSegments';
+import {
+  layoutBody,
+  planBody,
+  planLength,
+  sliceBody,
+  type BodySegment,
+} from '../../utils/convSegments';
 import { formatFullTime, turnSummary } from '../../utils/convTime';
 import { ENDPOINT_NAME, type EndpointKey } from '../../utils/endpointBadge';
 import { isImeComposing } from '../../utils/keyboard';
+import {
+  countActiveLiveSteps,
+  minimalCopyText,
+  splitMinimalTurnSections,
+} from '../../utils/minimalTurn';
 import {
   entriesFromLegacyTools,
   hasRunning,
@@ -34,7 +45,8 @@ import { ForkRight } from './forkIcon';
 import styles from './index.module.css';
 import { Markdown } from './Markdown';
 import { MessageResourceBoundary } from './MessageResourceBoundary';
-import { ToolTimeline } from './ToolTimeline';
+import { MinimalSteps, type MinimalLiveStatus } from './MinimalSteps';
+import { GeneratedImageBlock, ToolTimeline } from './ToolTimeline';
 import { useTranscriptViewMode } from './transcriptViewContext';
 import { UserMessageLinks } from './UserMessageLinks';
 
@@ -155,6 +167,31 @@ export const ErrorCard: React.FC<{
   </div>
 );
 
+function renderMinimalRawSegments(
+  segs: readonly BodySegment[],
+  keyPrefix: string,
+  isLiveSection: boolean,
+  streaming?: boolean,
+) {
+  let lastText = -1;
+  segs.forEach((s, j) => {
+    if (s.type === 'text') lastText = j;
+  });
+  return segs.map((seg, j) =>
+    seg.type === 'text' ? (
+      <div key={`${keyPrefix}-t-${j}`} className={styles.segment} data-testid="conv-segment">
+        <Markdown
+          text={seg.text}
+          settled={!isLiveSection || !streaming || j !== lastText}
+          streaming={isLiveSection && !!streaming && j === lastText}
+        />
+      </div>
+    ) : (
+      <ToolTimeline key={`${keyPrefix}-a-${j}`} items={seg.items} rawOrder />
+    ),
+  );
+}
+
 /** 助手正文：文字段和工具按发生位置穿插，而不是把工具全部堆在最上面 */
 export const AssistantBody: React.FC<{
   text: string;
@@ -164,8 +201,25 @@ export const AssistantBody: React.FC<{
   live?: boolean;
   streaming?: boolean;
   endedAt?: number;
+  durationMs?: number;
+  thinking?: boolean;
+  liveStatus?: MinimalLiveStatus;
+  minimalStateKey?: string;
   extra?: React.ReactNode;
-}> = ({ text, trace, legacyTools, breaks, live, streaming, endedAt, extra }) => {
+}> = ({
+  text,
+  trace,
+  legacyTools,
+  breaks,
+  live,
+  streaming,
+  endedAt,
+  durationMs,
+  thinking,
+  liveStatus,
+  minimalStateKey,
+  extra,
+}) => {
   const transcriptView = useTranscriptViewMode();
   const entries = useMemo(() => {
     // 已结束的一轮：旧消息里悬空的工具调用按已停止显示（不再一直转圈）
@@ -183,12 +237,75 @@ export const AssistantBody: React.FC<{
   const plan = useMemo(
     () =>
       planBody(layout, len, !!live, endedAt, breaks, {
-        // Verbose：每次工具调用单独成行，不再合并成组
-        groupTools: transcriptView !== 'verbose',
+        // Verbose 与 Minimal：展开列表里每次工具调用单独成行，不再二次合并成组
+        groupTools: transcriptView !== 'verbose' && transcriptView !== 'minimal',
       }),
     [layout, len, live, endedAt, breaks, transcriptView],
   );
   const segments = useMemo(() => sliceBody(text, plan), [text, plan]);
+  const minimalSections = useMemo(() => {
+    if (transcriptView !== 'minimal') return null;
+    return splitMinimalTurnSections(
+      segments,
+      live ? { live: true, thinking, startedAt: liveStatus?.startedAt } : { durationMs },
+    );
+  }, [transcriptView, segments, live, thinking, liveStatus?.startedAt, durationMs]);
+
+  if (transcriptView === 'minimal' && minimalSections) {
+    const activeLiveSteps = live ? countActiveLiveSteps(entries, thinking) : 0;
+    const hasInterject = minimalSections.length > 1;
+    const hasAnyMinimalSteps = live
+      ? hasInterject || activeLiveSteps > 0
+      : hasInterject
+        ? minimalSections.some((s) => s.split.stepCount > 0)
+        : minimalSections[0]!.split.stepCount > 0;
+    if (hasAnyMinimalSteps) {
+      return (
+        <>
+          {minimalSections.map((sec, idx) => {
+            const secKey = minimalStateKey
+              ? idx === 0
+                ? minimalStateKey
+                : `${minimalStateKey}:s${idx}`
+              : undefined;
+            const fragKey = sec.interject ? `ij-${sec.interject.id}-${idx}` : `sec-${idx}`;
+            const showSteps = sec.live ? activeLiveSteps > 0 : sec.split.stepCount > 0;
+            return (
+              <React.Fragment key={fragKey}>
+                {sec.interject && <ToolTimeline items={[sec.interject]} rawOrder />}
+                {showSteps ? (
+                  <>
+                    <MinimalSteps
+                      segments={sec.split.collapsed}
+                      stepCount={sec.live ? activeLiveSteps : sec.split.stepCount}
+                      workedMs={sec.live ? undefined : sec.split.workedMs}
+                      liveStatus={sec.live ? liveStatus : undefined}
+                      stateKey={secKey}
+                    />
+                    {sec.split.passthrough.length > 0 && (
+                      <ToolTimeline items={sec.split.passthrough} rawOrder />
+                    )}
+                    {sec.split.generatedImages.map((c) => (
+                      <GeneratedImageBlock key={c.id} call={c} />
+                    ))}
+                    {!sec.live && sec.split.summaryText && (
+                      <div className={styles.segment} data-testid="conv-segment">
+                        <Markdown text={sec.split.summaryText} settled />
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  renderMinimalRawSegments(sec.rawSegments, fragKey, sec.live, streaming)
+                )}
+              </React.Fragment>
+            );
+          })}
+          {extra}
+        </>
+      );
+    }
+  }
+
   if (!segments.length && !extra) return null;
   let lastText = -1;
   let runningAt = -1;
@@ -354,12 +471,14 @@ export const AssistantMessage = memo(function AssistantMessage({
   canRetry,
   onRetry,
   slots,
+  minimalStateKey,
 }: {
   message: ConvMessage;
   timeLabel?: string;
   canRetry: boolean;
   onRetry?: (id: string) => void;
   slots?: ConvSlots;
+  minimalStateKey?: string;
 }) {
   // 语言切换时重渲染：memo 挡住了根组件的更新，这里自己订阅（#140）
   useLocale();
@@ -371,6 +490,25 @@ export const AssistantMessage = memo(function AssistantMessage({
   const body = slots?.body?.(message);
   const retry = canRetry && onRetry ? () => onRetry(message.id) : undefined;
   const forkFrom = useContext(ForkFromMessageContext);
+  const transcriptView = useTranscriptViewMode();
+  const copyText = useMemo(() => {
+    const raw = message.text || message.error || '';
+    if (transcriptView !== 'minimal' || body || !message.text) return raw;
+    const entries = message.trace?.length
+      ? reduceTraceCached(settleTrace(message.trace, t('ui.chat-settings.stopped')))
+      : message.legacyTools?.length
+        ? entriesFromLegacyTools(message.legacyTools)
+        : [];
+    return minimalCopyText(message.text, entries, message.textBreaks) || raw;
+  }, [
+    transcriptView,
+    body,
+    message.text,
+    message.error,
+    message.trace,
+    message.legacyTools,
+    message.textBreaks,
+  ]);
   return (
     <MessageResourceBoundary id={message.id} origin={message.origin}>
       <div className={styles.assistant} data-testid="msg-assistant" data-message-id={message.id}>
@@ -387,6 +525,8 @@ export const AssistantMessage = memo(function AssistantMessage({
           legacyTools={message.legacyTools}
           breaks={body ? undefined : message.textBreaks}
           endedAt={message.at}
+          durationMs={message.durationMs ?? message.usage?.durationMs}
+          minimalStateKey={minimalStateKey ?? `msg:${message.id}`}
         />
         {body}
         {message.error && (
@@ -403,7 +543,7 @@ export const AssistantMessage = memo(function AssistantMessage({
           </div>
         )}
         {slots?.after?.(message)}
-        <div className={styles.meta}>
+        <div className={styles.meta} data-no-selection-toolbar="">
           {message.label && (
             <span className={styles.label} data-testid="conv-agent-label">
               <span className={styles.agentIcon} aria-hidden>
@@ -424,7 +564,7 @@ export const AssistantMessage = memo(function AssistantMessage({
           <span className={styles.spacer} />
           <div className={styles.actions} role="toolbar">
             <span className={styles.fullTime}>{full}</span>
-            <CopyAction text={message.text || message.error || ''} />
+            <CopyAction text={copyText} />
             {retry && !message.error && (
               <ActionButton
                 icon={RefreshCw}

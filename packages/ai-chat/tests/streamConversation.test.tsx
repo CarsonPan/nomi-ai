@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AiChatContextProvider, useAiChat } from '../src/contexts/AiChatContext';
 import { selectBusyHere, selectStreamingHere } from '../src/contexts/aiChatStore';
+import { INTERRUPTED_REPLY_PREFIX } from '../src/contexts/chatTurn';
 import { bindNextDelegateConversation, setNextDelegate } from '../src/services/delegateClient';
 import { type SdkIPCClient } from '../src/services/IPCClient';
 import { nomiLive, settledNomiMessages } from '../src/utils/convAdapters';
@@ -416,7 +417,14 @@ describe('Nomi 流式回复 · 会话固定与停止生成', () => {
     await act(async () => {
       await p1;
     });
-    await waitFor(() => expect(ref.api.state.messages.map((m) => m.content)).toEqual(['in B']));
+    // B 以用户消息结尾、又没在回复：后面补一张「被重启打断、可重试」的卡（只在界面上），这里只看读回的记录
+    await waitFor(() =>
+      expect(
+        ref.api.state.messages
+          .filter((m) => !m.id.startsWith(INTERRUPTED_REPLY_PREFIX))
+          .map((m) => m.content),
+      ).toEqual(['in B']),
+    );
     spy.mockRestore();
   });
 
@@ -569,7 +577,7 @@ describe('/agent 钉住后的发送', () => {
     apiMock.invoke = undefined;
   });
 
-  it('直接派出编程助手，不把需求交给对话模型', async () => {
+  it('直接派出 agent，不把需求交给对话模型', async () => {
     apiMock.transport = true;
     const calls: Array<[string, unknown]> = [];
     apiMock.invoke = (name, input) => {
@@ -603,7 +611,7 @@ describe('/agent 钉住后的发送', () => {
     expect(ref.api.state.messages.find((m) => m.role === 'user')?.delegateTo).toBe('claude');
   });
 
-  it('附图的地址作为背景交给编程助手', async () => {
+  it('附图的地址作为背景交给 agent', async () => {
     apiMock.transport = true;
     const calls: Array<[string, unknown]> = [];
     apiMock.invoke = (name, input) => {

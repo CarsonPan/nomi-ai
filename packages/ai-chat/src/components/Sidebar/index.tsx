@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   selectBusyConvos,
+  selectDoneConvos,
   selectIpcClient,
   selectIsLoading,
   selectMessageCount,
@@ -29,13 +30,14 @@ import { CONVERSATION_BACKENDS, type ConversationBackend } from '../../types/cha
 import { startupBrandIntro } from '../BrandIntro/state';
 import { EndpointInfoCard } from '../EndpointInfo';
 import { GettingStarted } from '../GettingStarted';
-import type { SettingsSection, SettingsTab } from '../SettingsView/sections';
+import type { SettingsSectionInput, SettingsTab } from '../SettingsView/sections';
 
 import styles from './index.module.css';
 import { sameMetaList } from './listEquality';
 import { NewChatButton } from './NewChatButton';
 import { useProjectGrouping, projectBackend, pinnedFirst } from './projectGrouping';
 import { NewProjectButton, OrganizeMenu, SECTION_WORKSPACES } from './ProjectGroups';
+import { useProjectPeek } from './ProjectPeek';
 import { SearchIcon } from './searchSupport';
 import { useSessionPeek } from './SessionPeek';
 import { SidebarOverlays } from './SidebarOverlays';
@@ -63,7 +65,7 @@ interface SidebarProps {
   /** 打开历史会话失败 / 有提示时 */
   onNotice?: (message: string) => void;
   /** 跳到设置的某个分区 / 标签：「按端」信息卡、「开始使用」清单 */
-  onOpenSettings?: (section: SettingsSection, tab?: SettingsTab) => void;
+  onOpenSettings?: (section: SettingsSectionInput, tab?: SettingsTab) => void;
   /** 侧栏底部的应用级入口（设置 / 知识 / 扩展 / 本机），由 App 传入 */
   footer?: React.ReactNode;
   /** 会话列表上方的固定入口（素材库），由 App 传入 */
@@ -102,11 +104,17 @@ const SidebarImpl: React.FC<SidebarProps> = ({
   const ipc = useAiChatSelector(selectIpcClient);
   const messageCount = useAiChatSelector(selectMessageCount);
   const isLoading = useAiChatSelector(selectIsLoading);
-  // Nomi 对话没有 CLI 标签，行首的状态点只能从「正在回复的会话」里取（与编程助手的 running 一致）
+  // Nomi 对话没有 CLI 标签，行首的状态点只能从「正在回复的会话」里取（与 agent 的 running 一致）
   const busyConvos = useAiChatSelector(selectBusyConvos);
   const runningIds = useMemo(
     () => new Set((busyConvos ?? []).filter((id) => id !== '')),
     [busyConvos],
+  );
+  // 刚跑完一轮、还没点进去看过的 Nomi 会话：行首留一个绿点，点进会话就消
+  const doneConvos = useAiChatSelector(selectDoneConvos);
+  const doneIds = useMemo(
+    () => new Set((doneConvos ?? []).filter((id) => id !== '')),
+    [doneConvos],
   );
   const tabs = useHarnessTabs();
   const { isDev, isNormal } = useChatMode();
@@ -123,6 +131,8 @@ const SidebarImpl: React.FC<SidebarProps> = ({
     setGroupByWorkspace,
     collapsedWorkspaces,
     setWorkspaceCollapsed,
+    pinnedProjects,
+    toggleProjectPin,
   } = useConversationListView();
   // 普通模式只有 Nomi：视图固定为「全部」，但不改动已保存的选择，切回开发模式即恢复
   const view = isNormal ? 'all' : storedView;
@@ -228,7 +238,7 @@ const SidebarImpl: React.FC<SidebarProps> = ({
   const float = useFloatingPanel(collapsed);
   const resize = useSidebarResize(!collapsed);
   // 会话面板收起时先放完收回动画再卸载
-  const panelP = usePresence(!collapsed || float.floating);
+  const panelP = usePresence(!collapsed || float.floating, 220);
   // 浮层里选了会话 / 新建了会话（高亮换了）：收起浮层
   const [floatFor, setFloatFor] = useState(highlightId);
   if (floatFor !== highlightId) {
@@ -263,7 +273,14 @@ const SidebarImpl: React.FC<SidebarProps> = ({
 
   // 置顶不单独成组：置顶的会话排在所在项目（或「其他对话」、平铺列表）的最前面
   const ordered = useMemo(() => pinnedFirst(visible), [visible]);
-  const wsGroups = useProjectGrouping(ordered, projects, tabById, groupByWorkspace);
+  const wsGroups = useProjectGrouping(
+    ordered,
+    projects,
+    tabById,
+    groupByWorkspace,
+    navList,
+    pinnedProjects,
+  );
 
   const {
     histBackends,
@@ -343,7 +360,27 @@ const SidebarImpl: React.FC<SidebarProps> = ({
     return () => window.removeEventListener(OPEN_CONVERSATION_EVENT, on);
   }, [open]);
 
+  const listPeek = useSessionPeek(400);
+  const projectPeek = useProjectPeek(220);
+  const { onPeek: onSessionPeek, hide: hideSessionPeek } = listPeek;
+  const { onPeek: onProjectPeek, hide: hideProjectPeek } = projectPeek;
+  const handleSessionPeek = useCallback(
+    (id: string, el: HTMLElement | null) => {
+      if (el) hideProjectPeek();
+      onSessionPeek(id, el);
+    },
+    [hideProjectPeek, onSessionPeek],
+  );
+  const handleProjectPeek = useCallback(
+    (projectId: string, el: HTMLElement | null) => {
+      if (el) hideSessionPeek();
+      onProjectPeek(projectId, el);
+    },
+    [hideSessionPeek, onProjectPeek],
+  );
+
   const handleNewClick = () => {
+    hideProjectPeek();
     if (isNormal) {
       void createFor('nomi');
       return;
@@ -354,8 +391,6 @@ const SidebarImpl: React.FC<SidebarProps> = ({
     }
     setNewMenu((v) => !v);
   };
-
-  const listPeek = useSessionPeek(400);
 
   const cliMissing = (b: ConversationBackend) => b !== 'nomi' && !bins[b];
 
@@ -435,11 +470,19 @@ const SidebarImpl: React.FC<SidebarProps> = ({
       bins={bins}
       project={ws}
       onPick={(b) => void createFor(b)}
+      onPickPreset={(p) => void createFor(p.cli, undefined, p)}
     />
   );
 
   // 新建项目（「+」）：打开「创建项目」弹窗，建好后在这个项目里开一个会话（onSaved）
-  const newProjectBtn = <NewProjectButton onClick={() => setProjectDialog('new')} />;
+  const newProjectBtn = (
+    <NewProjectButton
+      onClick={() => {
+        hideProjectPeek();
+        setProjectDialog('new');
+      }}
+    />
+  );
   // 「项目」标题右侧：整理「…」+ 新建项目（「+」），悬停标题时才显示；不分组时（「对话」）只有整理。
   // 新对话在顶行（不放进任何项目）
   const listOpen = !collapsedWorkspaces.includes(SECTION_WORKSPACES);
@@ -460,13 +503,14 @@ const SidebarImpl: React.FC<SidebarProps> = ({
       current: highlightId,
       tabById,
       runningIds,
+      doneIds,
       open,
       onCtx,
       renamingId,
       onRename: commitRename,
       onPinToggle: togglePin,
       onMore: openMore,
-      onPeek: listPeek.onPeek,
+      onPeek: handleSessionPeek,
       showIcon: isDev && view === 'all',
     }),
     [
@@ -474,19 +518,23 @@ const SidebarImpl: React.FC<SidebarProps> = ({
       highlightId,
       tabById,
       runningIds,
+      doneIds,
       open,
       onCtx,
       renamingId,
       commitRename,
+      togglePin,
       openMore,
-      listPeek.onPeek,
+      handleSessionPeek,
       isDev,
       view,
     ],
   );
+  // 收起退场动画（panelP.closing）期间不要立即把外层锁成 52px，否则右侧卡片会 0ms 硬跳盖住退场抽屉
+  const railOnly = !panelP.value || float.floating || panelHidden;
   return (
     <aside
-      className={`${styles.sidebar} ${collapsed || panelHidden ? styles.collapsed : ''}`}
+      className={`${styles.sidebar} ${railOnly ? styles.collapsed : ''}`}
       data-testid="chat-sidebar"
       data-panel={collapsed || panelHidden ? undefined : 'open'} // 展开：与右边对话卡片拼成一张（App.css）
       onMouseEnter={!panelHidden && float.floating ? float.cancelHide : undefined}
@@ -547,7 +595,10 @@ const SidebarImpl: React.FC<SidebarProps> = ({
             className={styles.threads}
             aria-label={t('ui.chat-settings.history')}
             data-testid="conversation-list"
-            onScroll={listPeek.hide}
+            onScroll={() => {
+              hideSessionPeek();
+              hideProjectPeek();
+            }}
           >
             {onOpenSettings && (
               <GettingStarted
@@ -567,21 +618,32 @@ const SidebarImpl: React.FC<SidebarProps> = ({
               wsGroups={wsGroups}
               collapsedWorkspaces={collapsedWorkspaces}
               onToggleCollapsed={setWorkspaceCollapsed}
-              onNewIn={(g) =>
-                void createFor(projectBackend(g, isNormal, view, endpointFilter), g.project.id)
+              onNewIn={(g, b, p) =>
+                void createFor(
+                  b ?? projectBackend(g, isNormal, view, endpointFilter),
+                  g.project.id,
+                  p,
+                )
               }
-              onEdit={(g) => setProjectDialog(g.project)}
+              onEdit={(g) => {
+                hideProjectPeek();
+                setProjectDialog(g.project);
+              }}
               activeId={rowActiveId}
               rows={rowProps}
               headerActions={listActions}
               isDev={isDev}
               view={view}
+              bins={bins}
+              onProjectPeek={handleProjectPeek}
+              onHideProjectPeek={hideProjectPeek}
               listLabel={t('ui.chat-settings.chats')}
               listOpen={listOpen}
               onToggleList={() => setWorkspaceCollapsed(SECTION_WORKSPACES, listOpen)}
               ordered={ordered}
               tabById={tabById}
               runningIds={runningIds}
+              doneIds={doneIds}
               renamingId={renamingId}
               showIcon={isDev && view === 'all'}
               histVisible={histVisible}
@@ -629,6 +691,7 @@ const SidebarImpl: React.FC<SidebarProps> = ({
         navList={navList}
         tabById={tabById}
         runningIds={runningIds}
+        doneIds={doneIds}
         onForkRequest={onForkRequest}
         startRename={startRename}
         togglePin={togglePin}
@@ -639,11 +702,27 @@ const SidebarImpl: React.FC<SidebarProps> = ({
         ctxP={ctxP}
         setCtx={setCtx}
         listPeek={listPeek}
+        projectPeek={projectPeek}
+        projectGroups={wsGroups.groups}
+        onToggleProjectPin={toggleProjectPin}
+        onEditProject={(g) => {
+          hideProjectPeek();
+          setProjectDialog(g.project);
+        }}
         commitRename={commitRename}
         projectDialog={projectDialog}
         setProjectDialog={setProjectDialog}
         onProjectSaved={(p) =>
-          void createFor(isNormal ? 'nomi' : view === 'by-endpoint' ? endpointFilter : 'nomi', p.id)
+          void createFor(
+            isNormal
+              ? 'nomi'
+              : view === 'by-endpoint'
+                ? endpointFilter
+                : cliMissing(cardBackend)
+                  ? 'nomi'
+                  : cardBackend,
+            p.id,
+          )
         }
         searchOpen={searchOpen}
         query={query}

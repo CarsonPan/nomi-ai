@@ -12,6 +12,7 @@ export type StatusKind =
   | 'queued'
   | 'permission'
   | 'compact'
+  | 'blocked'
   | 'retry'
   | 'reconnect'
   | 'subagent'
@@ -66,6 +67,12 @@ export function deriveStatus(args: {
           : t('ui.usage-tools.waiting-for-your-confirmation'),
     };
   const st = live?.status;
+  if (st?.kind === 'blocked')
+    return {
+      kind: 'blocked',
+      label: t('ui.usage-tools.auto-mode-cannot-approve'),
+      ...(st.text ? { detail: st.text } : {}),
+    };
   if (st?.kind === 'compact')
     return { kind: 'compact', label: t('ui.usage-tools.compacting-context') };
   if (st?.kind === 'retry')
@@ -84,7 +91,7 @@ export function deriveStatus(args: {
   const { call, subagent } = lastRunning(items);
   if (subagent) {
     const d = describeCall(subagent);
-    // Nomi 派给编程助手的子任务（delegate_to_cli）：不是 CLI 自己的子代理
+    // Nomi 派给 agent 的子任务（delegate_to_cli）：不是 CLI 自己的子代理
     const label =
       subagent.name === 'delegate_to_cli'
         ? t('ui.session-workspace.coding-assistant-running')
@@ -115,6 +122,18 @@ export function deriveStatus(args: {
     live?.thinking === undefined
   )
     return { kind: 'first-token', label: t('ui.usage-tools.waiting-for-the-model') };
-  if (live?.text.trim()) return { kind: 'writing', label: t('ui.usage-tools.writing-reply') };
+  let interjectAt: number | undefined;
+  if (live?.trace) {
+    for (let i = live.trace.length - 1; i >= 0; i--) {
+      const ev = live.trace[i]!;
+      if (ev.type === 'interject') {
+        interjectAt = ev.textAt;
+        break;
+      }
+    }
+  }
+  const activeText =
+    interjectAt !== undefined ? live?.text.slice(interjectAt).trim() : live?.text.trim();
+  if (activeText) return { kind: 'writing', label: t('ui.usage-tools.writing-reply') };
   return { kind: 'working', label: t('ui.chat-settings.processing') };
 }

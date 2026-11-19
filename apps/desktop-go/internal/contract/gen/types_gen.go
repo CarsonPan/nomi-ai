@@ -1185,6 +1185,67 @@ const (
 	AppIconSetOutputSunset AppIconSetOutput = "sunset"
 )
 
+type BrowserWindowCloseInput struct {
+	Id string `json:"id"`
+}
+
+type BrowserWindowNavigateInput struct {
+	Id  string `json:"id"`
+	Url string `json:"url"`
+}
+
+type BrowserWindowReloadInput struct {
+	Id string `json:"id"`
+}
+
+type BrowserWindowSetRegionInputRegion struct {
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
+}
+
+type BrowserWindowSetRegionInput struct {
+	Id      string                            `json:"id"`
+	Region  BrowserWindowSetRegionInputRegion `json:"region"`
+	Visible bool                              `json:"visible"`
+}
+
+type BrowserWindowShowInputRegion struct {
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
+}
+
+type BrowserWindowShowInput struct {
+	Id     string                       `json:"id"`
+	Url    string                       `json:"url"`
+	Region BrowserWindowShowInputRegion `json:"region"`
+}
+
+// BrowserWindowShowOutputReason 枚举：unsupported | failed
+type BrowserWindowShowOutputReason = string
+
+const (
+	BrowserWindowShowOutputReasonUnsupported BrowserWindowShowOutputReason = "unsupported"
+	BrowserWindowShowOutputReasonFailed      BrowserWindowShowOutputReason = "failed"
+)
+
+type BrowserWindowShowOutput struct {
+	Ok      bool                           `json:"ok"`
+	Reason  *BrowserWindowShowOutputReason `json:"reason,omitempty"`
+	Message *string                        `json:"message,omitempty"`
+}
+
+type BrowserWindowSyncInput struct {
+	Ids []string `json:"ids"`
+}
+
+type BrowserWindowSyncOutput struct {
+	Closed []string `json:"closed"`
+}
+
 // CharacterAssetsOutputStatus 枚举：idle | checking | downloading | ready | error
 type CharacterAssetsOutputStatus = string
 
@@ -1575,6 +1636,65 @@ type ChatWindowHandoffPutInput struct {
 
 type ChatWindowHandoffTakeInput struct {
 	Id string `json:"id"`
+}
+
+// CliLauncherGetOutputValueAccountSource 枚举：local | nomi
+type CliLauncherGetOutputValueAccountSource = string
+
+const (
+	CliLauncherGetOutputValueAccountSourceLocal CliLauncherGetOutputValueAccountSource = "local"
+	CliLauncherGetOutputValueAccountSourceNomi  CliLauncherGetOutputValueAccountSource = "nomi"
+)
+
+type CliLauncherGetOutputValue struct {
+	Enabled       bool                                    `json:"enabled"`
+	Command       string                                  `json:"command"`
+	AccountSource *CliLauncherGetOutputValueAccountSource `json:"accountSource,omitempty"`
+	HasLocalLogin *bool                                   `json:"hasLocalLogin,omitempty"`
+}
+
+// CliLauncherSetInputSettingsAccountSource 枚举：local | nomi
+type CliLauncherSetInputSettingsAccountSource = string
+
+const (
+	CliLauncherSetInputSettingsAccountSourceLocal CliLauncherSetInputSettingsAccountSource = "local"
+	CliLauncherSetInputSettingsAccountSourceNomi  CliLauncherSetInputSettingsAccountSource = "nomi"
+)
+
+type CliLauncherSetInputSettings struct {
+	Enabled       bool                                      `json:"enabled"`
+	Command       string                                    `json:"command"`
+	AccountSource *CliLauncherSetInputSettingsAccountSource `json:"accountSource,omitempty"`
+	HasLocalLogin *bool                                     `json:"hasLocalLogin,omitempty"`
+}
+
+type CliLauncherSetInput struct {
+	Kind     string                      `json:"kind"`
+	Settings CliLauncherSetInputSettings `json:"settings"`
+}
+
+// CliLauncherSetOutputAccountSource 枚举：local | nomi
+type CliLauncherSetOutputAccountSource = string
+
+const (
+	CliLauncherSetOutputAccountSourceLocal CliLauncherSetOutputAccountSource = "local"
+	CliLauncherSetOutputAccountSourceNomi  CliLauncherSetOutputAccountSource = "nomi"
+)
+
+type CliLauncherSetOutput struct {
+	Enabled       bool                               `json:"enabled"`
+	Command       string                             `json:"command"`
+	AccountSource *CliLauncherSetOutputAccountSource `json:"accountSource,omitempty"`
+	HasLocalLogin *bool                              `json:"hasLocalLogin,omitempty"`
+}
+
+type CliLauncherTestInput struct {
+	Kind    string `json:"kind"`
+	Command string `json:"command"`
+}
+
+type CliLauncherTestOutput struct {
+	Version string `json:"version"`
 }
 
 type CliRegistryOutputPluginsItem struct {
@@ -2221,42 +2341,127 @@ type DelegateClearPinInput struct {
 	TurnId string `json:"turnId"`
 }
 
+// DelegateDispatchInputSource 枚举：local | official | thirdParty
+type DelegateDispatchInputSource = string
+
+const (
+	DelegateDispatchInputSourceLocal      DelegateDispatchInputSource = "local"
+	DelegateDispatchInputSourceOfficial   DelegateDispatchInputSource = "official"
+	DelegateDispatchInputSourceThirdParty DelegateDispatchInputSource = "thirdParty"
+)
+
 type DelegateDispatchInput struct {
-	Cli            string  `json:"cli"`
-	Goal           string  `json:"goal"`
-	Context        *string `json:"context,omitempty"`
-	ConversationId *string `json:"conversationId,omitempty"`
-	ProjectId      *string `json:"projectId,omitempty"`
-	TurnId         *string `json:"turnId,omitempty"`
+	Cli             *string                      `json:"cli,omitempty"`
+	PresetId        *string                      `json:"presetId,omitempty"`
+	Source          *DelegateDispatchInputSource `json:"source,omitempty"`
+	AccountId       *string                      `json:"accountId,omitempty"`
+	Model           *string                      `json:"model,omitempty"`
+	ReasoningEffort *string                      `json:"reasoningEffort,omitempty"`
+	Goal            string                       `json:"goal"`
+	Context         *string                      `json:"context,omitempty"`
+	ConversationId  *string                      `json:"conversationId,omitempty"`
+	ProjectId       *string                      `json:"projectId,omitempty"`
+	TurnId          *string                      `json:"turnId,omitempty"`
 }
 
 type DelegateDispatchOutput struct {
-	TaskId   string `json:"taskId"`
-	Cli      string `json:"cli"`
-	Status   string `json:"status"`
-	Summary  string `json:"summary"`
-	FollowUp *bool  `json:"followUp,omitempty"`
+	TaskId     string  `json:"taskId"`
+	Cli        string  `json:"cli"`
+	Status     string  `json:"status"`
+	Summary    string  `json:"summary"`
+	FollowUp   *bool   `json:"followUp,omitempty"`
+	Background *bool   `json:"background,omitempty"`
+	TabId      *string `json:"tabId,omitempty"`
+	Cwd        *string `json:"cwd,omitempty"`
 }
 
 type DelegatePinInput struct {
-	Cli    string `json:"cli"`
-	TurnId string `json:"turnId"`
+	Cli      *string `json:"cli,omitempty"`
+	PresetId *string `json:"presetId,omitempty"`
+	TurnId   string  `json:"turnId"`
 }
 
 type DelegateSetSettingsInput struct {
 	Settings map[string]any `json:"settings"`
 }
 
+// DelegateSetSettingsOutputPresetsItemSource 枚举：local | official | thirdParty
+type DelegateSetSettingsOutputPresetsItemSource = string
+
+const (
+	DelegateSetSettingsOutputPresetsItemSourceLocal      DelegateSetSettingsOutputPresetsItemSource = "local"
+	DelegateSetSettingsOutputPresetsItemSourceOfficial   DelegateSetSettingsOutputPresetsItemSource = "official"
+	DelegateSetSettingsOutputPresetsItemSourceThirdParty DelegateSetSettingsOutputPresetsItemSource = "thirdParty"
+)
+
+// DelegateSetSettingsOutputPresetsItemCostTier 枚举：high | medium | low
+type DelegateSetSettingsOutputPresetsItemCostTier = string
+
+const (
+	DelegateSetSettingsOutputPresetsItemCostTierHigh   DelegateSetSettingsOutputPresetsItemCostTier = "high"
+	DelegateSetSettingsOutputPresetsItemCostTierMedium DelegateSetSettingsOutputPresetsItemCostTier = "medium"
+	DelegateSetSettingsOutputPresetsItemCostTierLow    DelegateSetSettingsOutputPresetsItemCostTier = "low"
+)
+
+type DelegateSetSettingsOutputPresetsItem struct {
+	Id              string                                        `json:"id"`
+	Builtin         *bool                                         `json:"builtin,omitempty"`
+	Label           string                                        `json:"label"`
+	Cli             string                                        `json:"cli"`
+	Source          DelegateSetSettingsOutputPresetsItemSource    `json:"source"`
+	AccountId       *string                                       `json:"accountId,omitempty"`
+	Model           *string                                       `json:"model,omitempty"`
+	ReasoningEffort *string                                       `json:"reasoningEffort,omitempty"`
+	CostTier        *DelegateSetSettingsOutputPresetsItemCostTier `json:"costTier,omitempty"`
+}
+
 type DelegateSetSettingsOutput struct {
-	Enabled  bool              `json:"enabled"`
-	Defaults map[string]string `json:"defaults"`
+	Enabled        bool                                   `json:"enabled"`
+	Defaults       map[string]string                      `json:"defaults"`
+	AutoComplexity *bool                                  `json:"autoComplexity,omitempty"`
+	Presets        []DelegateSetSettingsOutputPresetsItem `json:"presets,omitempty"`
+	Routes         map[string]json.RawMessage             `json:"routes,omitempty"`
+}
+
+// DelegateSettingsOutputPresetsItemSource 枚举：local | official | thirdParty
+type DelegateSettingsOutputPresetsItemSource = string
+
+const (
+	DelegateSettingsOutputPresetsItemSourceLocal      DelegateSettingsOutputPresetsItemSource = "local"
+	DelegateSettingsOutputPresetsItemSourceOfficial   DelegateSettingsOutputPresetsItemSource = "official"
+	DelegateSettingsOutputPresetsItemSourceThirdParty DelegateSettingsOutputPresetsItemSource = "thirdParty"
+)
+
+// DelegateSettingsOutputPresetsItemCostTier 枚举：high | medium | low
+type DelegateSettingsOutputPresetsItemCostTier = string
+
+const (
+	DelegateSettingsOutputPresetsItemCostTierHigh   DelegateSettingsOutputPresetsItemCostTier = "high"
+	DelegateSettingsOutputPresetsItemCostTierMedium DelegateSettingsOutputPresetsItemCostTier = "medium"
+	DelegateSettingsOutputPresetsItemCostTierLow    DelegateSettingsOutputPresetsItemCostTier = "low"
+)
+
+type DelegateSettingsOutputPresetsItem struct {
+	Id              string                                     `json:"id"`
+	Builtin         *bool                                      `json:"builtin,omitempty"`
+	Label           string                                     `json:"label"`
+	Cli             string                                     `json:"cli"`
+	Source          DelegateSettingsOutputPresetsItemSource    `json:"source"`
+	AccountId       *string                                    `json:"accountId,omitempty"`
+	Model           *string                                    `json:"model,omitempty"`
+	ReasoningEffort *string                                    `json:"reasoningEffort,omitempty"`
+	CostTier        *DelegateSettingsOutputPresetsItemCostTier `json:"costTier,omitempty"`
 }
 
 type DelegateSettingsOutput struct {
-	Enabled   bool              `json:"enabled"`
-	Defaults  map[string]string `json:"defaults"`
-	Installed []string          `json:"installed"`
-	Pinned    string            `json:"pinned"`
+	Enabled        bool                                `json:"enabled"`
+	Defaults       map[string]string                   `json:"defaults"`
+	Installed      []string                            `json:"installed"`
+	Pinned         string                              `json:"pinned"`
+	AutoComplexity *bool                               `json:"autoComplexity,omitempty"`
+	Presets        []DelegateSettingsOutputPresetsItem `json:"presets,omitempty"`
+	Routes         map[string]json.RawMessage          `json:"routes,omitempty"`
+	LocalAvailable map[string]bool                     `json:"localAvailable,omitempty"`
 }
 
 type DelegateStatusInput struct {
@@ -2264,11 +2469,14 @@ type DelegateStatusInput struct {
 }
 
 type DelegateStatusOutput struct {
-	TaskId   string `json:"taskId"`
-	Cli      string `json:"cli"`
-	Status   string `json:"status"`
-	Summary  string `json:"summary"`
-	FollowUp *bool  `json:"followUp,omitempty"`
+	TaskId     string  `json:"taskId"`
+	Cli        string  `json:"cli"`
+	Status     string  `json:"status"`
+	Summary    string  `json:"summary"`
+	FollowUp   *bool   `json:"followUp,omitempty"`
+	Background *bool   `json:"background,omitempty"`
+	TabId      *string `json:"tabId,omitempty"`
+	Cwd        *string `json:"cwd,omitempty"`
 }
 
 type DesktopAuditInput struct {
@@ -5450,10 +5658,11 @@ type GatewayResetTokenInput struct {
 	Client string `json:"client"`
 }
 
-// GatewaySetAssignmentInputPatchNewTabSource 枚举：official | thirdParty
+// GatewaySetAssignmentInputPatchNewTabSource 枚举：local | official | thirdParty
 type GatewaySetAssignmentInputPatchNewTabSource = string
 
 const (
+	GatewaySetAssignmentInputPatchNewTabSourceLocal      GatewaySetAssignmentInputPatchNewTabSource = "local"
 	GatewaySetAssignmentInputPatchNewTabSourceOfficial   GatewaySetAssignmentInputPatchNewTabSource = "official"
 	GatewaySetAssignmentInputPatchNewTabSourceThirdParty GatewaySetAssignmentInputPatchNewTabSource = "thirdParty"
 )
@@ -5473,6 +5682,7 @@ type GatewaySetOptionsInput struct {
 	StrictParams        *bool    `json:"strictParams,omitempty"`
 	MaxRequestBodyBytes *float64 `json:"maxRequestBodyBytes,omitempty"`
 	ContextTier         *float64 `json:"contextTier,omitempty"`
+	HelperModel         *string  `json:"helperModel,omitempty"`
 	PrivacyMode         *bool    `json:"privacyMode,omitempty"`
 	PrivacyStrict       *bool    `json:"privacyStrict,omitempty"`
 	PrivacyLocal        *bool    `json:"privacyLocal,omitempty"`
@@ -5895,10 +6105,11 @@ type HarnessMessageAgentOutput struct {
 	TabId   *string `json:"tabId,omitempty"`
 }
 
-// HarnessModelCatalogInputSource 枚举：official | thirdParty
+// HarnessModelCatalogInputSource 枚举：local | official | thirdParty
 type HarnessModelCatalogInputSource = string
 
 const (
+	HarnessModelCatalogInputSourceLocal      HarnessModelCatalogInputSource = "local"
 	HarnessModelCatalogInputSourceOfficial   HarnessModelCatalogInputSource = "official"
 	HarnessModelCatalogInputSourceThirdParty HarnessModelCatalogInputSource = "thirdParty"
 )
@@ -6718,10 +6929,11 @@ type HarnessTabMessagesOutputItem struct {
 	ResponseModel *string `json:"responseModel,omitempty"`
 }
 
-// HarnessTabModelInputExpectSource 枚举：official | thirdParty
+// HarnessTabModelInputExpectSource 枚举：local | official | thirdParty
 type HarnessTabModelInputExpectSource = string
 
 const (
+	HarnessTabModelInputExpectSourceLocal      HarnessTabModelInputExpectSource = "local"
 	HarnessTabModelInputExpectSourceOfficial   HarnessTabModelInputExpectSource = "official"
 	HarnessTabModelInputExpectSourceThirdParty HarnessTabModelInputExpectSource = "thirdParty"
 )
@@ -7012,18 +7224,20 @@ type HarnessTabSendOutput struct {
 	SessionId string `json:"sessionId"`
 }
 
-// HarnessTabSourceInputSource 枚举：official | thirdParty
+// HarnessTabSourceInputSource 枚举：local | official | thirdParty
 type HarnessTabSourceInputSource = string
 
 const (
+	HarnessTabSourceInputSourceLocal      HarnessTabSourceInputSource = "local"
 	HarnessTabSourceInputSourceOfficial   HarnessTabSourceInputSource = "official"
 	HarnessTabSourceInputSourceThirdParty HarnessTabSourceInputSource = "thirdParty"
 )
 
 type HarnessTabSourceInput struct {
-	Id     string                      `json:"id"`
-	Source HarnessTabSourceInputSource `json:"source"`
-	Model  *string                     `json:"model,omitempty"`
+	Id        string                      `json:"id"`
+	Source    HarnessTabSourceInputSource `json:"source"`
+	Model     *string                     `json:"model,omitempty"`
+	AccountId *string                     `json:"accountId,omitempty"`
 }
 
 // HarnessTabSourceOutputSandboxPendingItemKind 枚举：category | read | folder | file | protected
@@ -10933,6 +11147,17 @@ type EventAiUserQuestion struct {
 	ExpiresAt      *float64                           `json:"expiresAt,omitempty"`
 }
 
+type EventBrowserWindowClosed struct {
+	Id string `json:"id"`
+}
+
+type EventBrowserWindowLoaded struct {
+	Id      string  `json:"id"`
+	Url     *string `json:"url,omitempty"`
+	Ok      bool    `json:"ok"`
+	Message *string `json:"message,omitempty"`
+}
+
 // EventCharacterAssetsChangedStatus 枚举：idle | checking | downloading | ready | error
 type EventCharacterAssetsChangedStatus = string
 
@@ -10999,11 +11224,14 @@ type EventConversationsChanged struct {
 }
 
 type EventDelegateCompleted struct {
-	TaskId   string `json:"taskId"`
-	Cli      string `json:"cli"`
-	Status   string `json:"status"`
-	Summary  string `json:"summary"`
-	FollowUp *bool  `json:"followUp,omitempty"`
+	TaskId     string  `json:"taskId"`
+	Cli        string  `json:"cli"`
+	Status     string  `json:"status"`
+	Summary    string  `json:"summary"`
+	FollowUp   *bool   `json:"followUp,omitempty"`
+	Background *bool   `json:"background,omitempty"`
+	TabId      *string `json:"tabId,omitempty"`
+	Cwd        *string `json:"cwd,omitempty"`
 }
 
 type EventDesktopBubble struct {
@@ -12088,6 +12316,34 @@ type AppIconGetOutputT = AppIconGetOutput
 type AppIconSetInputT = AppIconSetInput
 type AppIconSetOutputT = AppIconSetOutput
 
+// BrowserWindowCloseInputT 是 browserWindow.close 的入参
+type BrowserWindowCloseInputT = BrowserWindowCloseInput
+type BrowserWindowCloseOutputT = bool
+
+// BrowserWindowCloseAllInputT 是 browserWindow.closeAll 的入参
+type BrowserWindowCloseAllInputT = map[string]any
+type BrowserWindowCloseAllOutputT = bool
+
+// BrowserWindowNavigateInputT 是 browserWindow.navigate 的入参
+type BrowserWindowNavigateInputT = BrowserWindowNavigateInput
+type BrowserWindowNavigateOutputT = bool
+
+// BrowserWindowReloadInputT 是 browserWindow.reload 的入参
+type BrowserWindowReloadInputT = BrowserWindowReloadInput
+type BrowserWindowReloadOutputT = bool
+
+// BrowserWindowSetRegionInputT 是 browserWindow.setRegion 的入参
+type BrowserWindowSetRegionInputT = BrowserWindowSetRegionInput
+type BrowserWindowSetRegionOutputT = bool
+
+// BrowserWindowShowInputT 是 browserWindow.show 的入参
+type BrowserWindowShowInputT = BrowserWindowShowInput
+type BrowserWindowShowOutputT = BrowserWindowShowOutput
+
+// BrowserWindowSyncInputT 是 browserWindow.sync 的入参
+type BrowserWindowSyncInputT = BrowserWindowSyncInput
+type BrowserWindowSyncOutputT = BrowserWindowSyncOutput
+
 // CharacterAssetsInputT 是 character.assets 的入参
 type CharacterAssetsInputT = any
 type CharacterAssetsOutputT = CharacterAssetsOutput
@@ -12167,6 +12423,18 @@ type ChatWindowHandoffPutOutputT = bool
 // ChatWindowHandoffTakeInputT 是 chatWindow.handoffTake 的入参
 type ChatWindowHandoffTakeInputT = ChatWindowHandoffTakeInput
 type ChatWindowHandoffTakeOutputT = string
+
+// CliLauncherGetInputT 是 cli.launcherGet 的入参
+type CliLauncherGetInputT = any
+type CliLauncherGetOutputT = map[string]CliLauncherGetOutputValue
+
+// CliLauncherSetInputT 是 cli.launcherSet 的入参
+type CliLauncherSetInputT = CliLauncherSetInput
+type CliLauncherSetOutputT = CliLauncherSetOutput
+
+// CliLauncherTestInputT 是 cli.launcherTest 的入参
+type CliLauncherTestInputT = CliLauncherTestInput
+type CliLauncherTestOutputT = CliLauncherTestOutput
 
 // CliRegistryInputT 是 cli.registry 的入参
 type CliRegistryInputT = any
@@ -13843,6 +14111,8 @@ type EventAiTtsEndT = EventAiTtsEnd
 type EventAiUserProfileChangedT = EventAiUserProfileChanged
 type EventAiUserQuestionT = EventAiUserQuestion
 type EventAvatarEventT = json.RawMessage
+type EventBrowserWindowClosedT = EventBrowserWindowClosed
+type EventBrowserWindowLoadedT = EventBrowserWindowLoaded
 type EventCharacterAssetsChangedT = EventCharacterAssetsChanged
 type EventChatAssetsChangedT = any
 type EventChatBgChangedT = EventChatBgChanged

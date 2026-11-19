@@ -3,9 +3,10 @@ package harness
 // orchestrator_idle.go：空闲回收、换账号 / 升级时重启长驻进程。
 
 import (
-	"github.com/Cookieboty/nomi-ai/apps/desktop-go/internal/cliplugins/builtin"
+	"strings"
 	"time"
 
+	"github.com/Cookieboty/nomi-ai/apps/desktop-go/internal/cliplugins/builtin"
 	"github.com/Cookieboty/nomi-ai/apps/desktop-go/internal/core/cli"
 	"github.com/Cookieboty/nomi-ai/apps/desktop-go/internal/core/cli/ports"
 	"github.com/Cookieboty/nomi-ai/apps/desktop-go/internal/core/i18n"
@@ -89,9 +90,11 @@ func (o *Orchestrator) reclaimIdle(now, idleMs float64) []string {
 }
 
 func (o *Orchestrator) invalidateCatalog(kind string) {
-	delete(o.modelCatalogs, kind)
-	o.modelCatalogGen[kind]++
-	delete(o.modelCatalogInflight, kind)
+	for _, key := range []string{kind, kind + ":local"} {
+		delete(o.modelCatalogs, key)
+		o.modelCatalogGen[key]++
+		delete(o.modelCatalogInflight, key)
+	}
 }
 
 // RecycleBackend = recycleBackend(kind, only?)。
@@ -108,7 +111,8 @@ func (o *Orchestrator) RecycleBackend(kind string, only func(*util.Obj) bool) {
 		if tab == nil {
 			return true
 		}
-		return o.sourceOf(tab) == "official" && (only == nil || only(tab))
+		src := o.sourceOf(tab)
+		return (src == "official" || src == "local") && (only == nil || only(tab))
 	}
 	switch {
 	case builtin.UsesAcp(kind):
@@ -218,15 +222,30 @@ func (o *Orchestrator) BusyTurns(kind string) int {
 
 // RecycleDefaultAccount = recycleDefaultAccount。
 func (o *Orchestrator) RecycleDefaultAccount(kind string) {
-	o.RecycleBackend(kind, func(t *util.Obj) bool { return !truthy(t.Get("accountId")) })
+	o.RecycleBackend(kind, func(t *util.Obj) bool {
+		return o.sourceOf(t) == "official" && !truthy(t.Get("accountId"))
+	})
 }
 
 // OfficialAccountTabs = officialAccountTabs（nil = null）。
 func (o *Orchestrator) OfficialAccountTabs(kind string) []any {
 	out := []any{}
 	for _, k := range o.tabs.Keys() {
-		if t := o.tab(k); t.Get("backend") == kind && o.sourceOf(t) == "official" {
-			out = append(out, t.Get("accountId"))
+		if k == MainTabID {
+			continue
+		}
+		t := o.tab(k)
+		if t == nil || t.Get("backend") != kind || o.sourceOf(t) != "official" {
+			continue
+		}
+		aid := t.Get("accountId")
+		pinned := false
+		if s, ok := aid.(string); ok && s != "" && !strings.HasPrefix(s, "local-") {
+			pinned = true
+		}
+		status := t.Get("status")
+		if pinned || status == "running" || status == "queued" {
+			out = append(out, aid)
 		}
 	}
 	return out
@@ -246,7 +265,7 @@ func (o *Orchestrator) SetTabAccount(id string, accountID *string) *util.Obj {
 		return tab.Clone()
 	}
 	tab.Set("accountId", next)
-	if sid, _ := tab.Get("cliSessionId").(string); sid != "" && o.sourceOf(tab) == "official" {
+	if sid, _ := tab.Get("cliSessionId").(string); sid != "" && o.sourceOf(tab) == "official" && !cli.LauncherManagesLogin(str(tab, "backend")) {
 		if n, ok := o.d.Accounts.(ports.AccountSessionNoter); ok && o.d.Accounts != nil {
 			n.NoteSession(str(tab, "backend"), sid, strP(tab, "accountId"))
 		}
@@ -254,4 +273,37 @@ func (o *Orchestrator) SetTabAccount(id string, accountID *string) *util.Obj {
 	o.RecycleBackend(str(tab, "backend"), func(x *util.Obj) bool { return x.Get("id") == id })
 	o.changed()
 	return tab.Clone()
+}
+
+// LauncherChanged applies saved launcher or account-source changes to live state and catalogs.
+func (o *Orchestrator) LauncherChanged(kind string, prev, next cli.LauncherSettings) {
+	if !isAccountBackend(kind) || prev == next {
+		return
+	}
+	if prev.AccountSource == next.AccountSource && prev.Enabled == next.Enabled && (!next.Enabled || prev.Command == next.Command) {
+		return
+	}
+	if prev.AccountSource != next.AccountSource {
+		for _, k := range o.tabs.Keys() {
+			if k == MainTabID {
+				continue
+			}
+			t := o.tab(k)
+			if t == nil || str(t, "backend") != kind || o.sourceOf(t) != "official" {
+				continue
+			}
+			if next.AccountSource == "local" {
+				t.Delete("accountId")
+			} else if next.AccountSource == "nomi" && !truthy(t.Get("accountId")) {
+				o.adoptScope(t)
+			}
+			if t.Get("status") != "running" && (truthy(t.Get("cliSessionId")) || len(o.TabMessages(k)) > 0) {
+				t.Set("cliSessionId", nil)
+				o.setCarried(t, o.TabMessages(k), str(t, "cwd"))
+			}
+		}
+	}
+	o.RecycleBackend(kind, nil)
+	o.changed()
+	o.post("harness.changed", o.State())
 }

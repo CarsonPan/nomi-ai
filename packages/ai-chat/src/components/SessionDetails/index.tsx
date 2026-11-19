@@ -35,8 +35,9 @@ import { sideChatName, useSideChatsIn } from '../../services/sideChat';
 import { groupOf, requestOpenTask, statusLabel, type TaskGroup } from '../../services/tasksClient';
 import type { ConvMessage } from '../../types/conversation';
 import type { IPCClient } from '../../types/ipc';
+import { nestedOwnerBackend, sessionAgentIdentity } from '../../utils/agentIdentity';
 import { nomiLiveTrace } from '../../utils/convAdapters';
-import { ENDPOINT_NAME } from '../../utils/endpointBadge';
+import type { EndpointKey } from '../../utils/endpointBadge';
 import type { TabLive } from '../../utils/liveState';
 import {
   aggregateSessionChanges,
@@ -53,7 +54,9 @@ import {
   collectSessionAgents,
   countRunning,
   sideChatAgents,
+  sortSessionAgents,
   pendingDelegateTaskIds,
+  sessionAgentTarget,
   type SessionAgent,
   type SessionAgentStatus,
 } from './agents';
@@ -137,17 +140,17 @@ const AgentRow: React.FC<{
   /** 悬停卡片看哪个子任务；columnMessages：主会话里的进程内子代理从主列消息里取 */
   target?: SubagentTarget | null;
   columnMessages?: readonly ConvMessage[];
-}> = ({ agent: a, onOpen, target, columnMessages }) => {
-  const name =
-    a.kind === 'delegate' && a.backend
-      ? t(ENDPOINT_NAME[a.backend] ?? a.backend)
-      : a.label || t('ui.usage-tools.subagent');
+  /** 进程内子代理所属的端点（Nomi 对话里的是 Nomi） */
+  ownerBackend?: EndpointKey | null;
+  boundaryRef?: React.RefObject<HTMLElement | null>;
+}> = ({ agent: a, onOpen, target, columnMessages, ownerBackend, boundaryRef }) => {
+  const { name, backend } = sessionAgentIdentity(a, ownerBackend);
   const body = (
     <>
       {a.kind === 'side-chat' ? (
         <Icon icon={MessageCirclePlus} size={16} />
-      ) : a.kind === 'delegate' && a.backend ? (
-        <EndpointIcon backend={a.backend} size={16} decorative />
+      ) : backend ? (
+        <EndpointIcon backend={backend} size={16} decorative />
       ) : (
         <Icon icon={Bot} size={16} />
       )}
@@ -165,6 +168,8 @@ const AgentRow: React.FC<{
       <AgentHoverCard
         as="div"
         className={styles.hoverRow}
+        placement="left"
+        boundaryRef={boundaryRef}
         target={target}
         onOpen={onOpen}
         columnMessages={columnMessages}
@@ -222,6 +227,8 @@ const DetailsPanel: React.FC<
       const target = e.target as Node | null;
       if (!target || ref.current?.contains(target)) return;
       if ((target as Element).closest?.('[data-testid="session-details-toggle"]')) return;
+      // 悬停卡片 portal 在 body 上：点卡片去打开子任务时不提前关闭面板
+      if ((target as Element).closest?.('[data-testid="agent-hover-card"]')) return;
       onClose();
     };
     window.addEventListener('pointerdown', onDown, true);
@@ -258,40 +265,43 @@ const DetailsPanel: React.FC<
   );
   const pane = useSubagentPane();
   const parentTabId = isDev && tabs.isCliTab ? (tabs.activeTab?.id ?? null) : null;
+  // 进程内子代理属于谁：agent 标签的子代理是那个助手；Nomi 对话的按主标签当前的后端（默认 Nomi）
+  const ownerBackend = nestedOwnerBackend(parentTabId, tabs.state?.tabs);
   const { openWorkbench } = useChangesUi();
   const branch = useGitBranch(cwd);
   const sessionChanges = useMemo(
     () => summarizeChanges(aggregateSessionChanges(messages)),
     [messages],
   );
-  // git 仓库里以工作区改动为准（委派出去的编程助手改的也算）；不是 git 仓库时退回本会话的改动
+  // git 仓库里以工作区改动为准（委派出去的 agent 改的也算）；不是 git 仓库时退回本会话的改动
   const gitChanges = useWorkspaceChanges(cwd, messages.length);
   const changes = gitChanges ?? sessionChanges;
   const pending = useMemo(() => pendingDelegateTaskIds(agentMessages), [agentMessages]);
   const { results, followUps } = useDelegateResults(pending);
   const sideChats = useSideChatsIn(pane?.scope ?? '');
   const agents = useMemo(
-    () => [
-      ...collectSessionAgents(
-        agentMessages,
-        tabs.state?.tabs,
-        waitingLive(waitingKey),
-        liveAgents ?? {},
-        results,
-        followUps,
-      ),
-      ...sideChatAgents(
-        sideChats.map((c) => ({
-          id: c.id,
-          name: sideChatName(c),
-          running: !!c.running,
-          messages: c.messages,
-        })),
-      ),
-    ],
+    () =>
+      sortSessionAgents([
+        ...collectSessionAgents(
+          agentMessages,
+          tabs.state?.tabs,
+          waitingLive(waitingKey),
+          liveAgents ?? {},
+          results,
+          followUps,
+        ),
+        ...sideChatAgents(
+          sideChats.map((c) => ({
+            id: c.id,
+            name: sideChatName(c),
+            running: !!c.running,
+            messages: c.messages,
+          })),
+        ),
+      ]),
     [agentMessages, tabs.state?.tabs, waitingKey, liveAgents, results, followUps, sideChats],
   );
-  // 这个会话的持续任务：Nomi 对话用当前会话 id；编程助手标签用它在会话列表里的镜像项
+  // 这个会话的持续任务：Nomi 对话用当前会话 id；agent 标签用它在会话列表里的镜像项
   const ipc = useAiChatSelector(selectIpcClient) as IPCClient | undefined;
   const store = ipc?.conversationStore?.() as ConversationStore | undefined;
   const conversationId = tabId
@@ -369,13 +379,13 @@ const DetailsPanel: React.FC<
           <AgentRow
             key={a.id}
             agent={a}
-            target={
-              a.chatId
-                ? { kind: 'side-chat', chatId: a.chatId }
-                : a.tabId
-                  ? { kind: 'harness', tabId: a.tabId }
-                  : { kind: 'nested', callId: a.id, parentTabId }
+            boundaryRef={ref}
+            ownerBackend={
+              a.kind === 'subagent'
+                ? nestedOwnerBackend(parentTabId, tabs.state?.tabs, a.id, messages)
+                : ownerBackend
             }
+            target={sessionAgentTarget(a, parentTabId)}
             columnMessages={messages}
             onOpen={
               pane
@@ -383,7 +393,10 @@ const DetailsPanel: React.FC<
                   ? () => pane.openSideChatTab(a.chatId!)
                   : a.tabId
                     ? () => pane.openSubagent(a.tabId!)
-                    : () => pane.openNested(a.id, parentTabId)
+                    : // 委派的标签已经关掉：不再当成「进程内子代理」打开（那是只读的空会话）
+                      a.kind === 'delegate'
+                      ? undefined
+                      : () => pane.openNested(a.id, parentTabId)
                 : undefined
             }
           />
@@ -403,6 +416,8 @@ const DetailsPanel: React.FC<
             <AgentHoverCard
               as="div"
               className={styles.hoverRow}
+              placement="left"
+              boundaryRef={ref}
               target={
                 task.origin?.via === 'delegate' && task.executor.kind === 'nomi'
                   ? { kind: 'nomi-task', taskId: task.id }

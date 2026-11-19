@@ -30,11 +30,14 @@ export interface HarnessDelegation {
   goal: string;
   /** 持续任务开的标签（后台委派 = 任务）：停止、审批经任务走 */
   taskId?: string;
+  /** 该标签复用前曾承载过的历史工具调用 id / 任务 id */
+  prevCallIds?: string[];
+  prevTaskIds?: string[];
   takenOver?: boolean;
   approvals: { asked: number; denied: number; timedOut: number };
 }
 
-/** Nomi 委派出去的标签：只在 Nomi 里看（对话里的子任务卡片、任务页），不进侧栏与编程助手的标签计数 */
+/** Nomi 委派出去的标签：只在 Nomi 里看（对话里的子任务卡片、任务页），不进侧栏与 agent 的标签计数 */
 export const isNomiDelegated = (tab: { delegation?: HarnessDelegation }): boolean =>
   tab.delegation?.by === 'nomi';
 
@@ -66,10 +69,15 @@ export interface HarnessTabMeta {
   cliSessionId: string | null;
   status: HarnessTabStatus;
   unread: number;
+  /**
+   * 刚刚成功跑完一轮（侧栏行首的「已完成」点）。进这个会话就清除；
+   * 失败 / 取消不会留，切换轮次时由下一次完成覆盖。
+   */
+  finished?: boolean;
   createdAt: number;
   updatedAt: number;
   lastError?: string;
-  /** 编程助手进程因空闲被回收；下一条消息会自动续接会话 */
+  /** agent 进程因空闲被回收；下一条消息会自动续接会话 */
   dormant?: boolean;
   /** 换工作目录 / 分叉后，下一条消息会连同这么多条之前的对话一起发给新会话 */
   carriedMessages?: number;
@@ -115,7 +123,7 @@ export interface HarnessTabsState {
   /** Codex 在自动改文件档允许联网 */
   codexNetwork?: boolean;
   /**
-   * 「全部自动」（默认开）：新标签与 Nomi 委派的编程助手默认完全放开，
+   * 「全部自动」（默认开）：新标签与 Nomi 委派的 agent 默认完全放开，
    * Nomi 对话工作区里的文件操作不确认（命令始终确认）；关掉后回到逐项询问
    */
   autoApprove?: boolean;
@@ -123,7 +131,7 @@ export interface HarnessTabsState {
   aiReview?: boolean;
   /** Nomi 工作区文件操作免确认；缺省 = 跟随 autoApprove（只在单独设过时出现） */
   nomiAutoApprove?: boolean;
-  /** 编程助手的系统沙箱：on / off（用户关了）/ unsupported（当前平台不支持） */
+  /** agent 的系统沙箱：on / off（用户关了）/ unsupported（当前平台不支持） */
   sandbox?: 'on' | 'off' | 'unsupported';
 }
 
@@ -269,11 +277,15 @@ export type HarnessLiveEvent =
   | {
       tabId: string;
       type: 'status';
-      kind: 'retry' | 'reconnect' | 'compact' | 'clear';
+      kind: 'retry' | 'reconnect' | 'compact' | 'clear' | 'blocked';
       text?: string;
       attempt?: number;
       max?: number;
     }
+  /** 某个动作被权限系统拒了（自动模式校验不了 / 策略拒绝）；不然这类拒绝会整个消失 */
+  | { tabId: string; type: 'permission-denied'; tool: string; code?: string; reason?: string }
+  /** 会话级提示（Claude 自己说明，如自动模式无法校验动作） */
+  | { tabId: string; type: 'notice'; tag: string; text: string }
   /** 一轮进行中的实时上下文占用（每次主线程请求 / 压缩后）；null = 压缩了但大小未知 */
   | { tabId: string; type: 'context'; tokens: number | null; model?: string; window?: number }
   | { tabId: string; type: 'done'; text: string; sessionId?: string; usage?: HarnessUsage }
@@ -317,8 +329,8 @@ export interface LiveAgentEvent {
 
 export const MAIN_TAB_ID = 'main';
 
-/** CLI 标签的来源：官方账号（CLI 直连）/ 第三方（经网关） */
-export type TabSource = 'official' | 'thirdParty';
+/** CLI 标签的来源：本机登录（沿用终端配置）/ 官方账号（Nomi 托管目录）/ 第三方（经网关） */
+export type TabSource = 'local' | 'official' | 'thirdParty';
 
 /** 思考深度档位：与主进程共用 @nomi-ai/types 里的唯一定义 */
 export type { ReasoningEffort };
@@ -661,17 +673,22 @@ export const harnessClient = {
     nomiAutoApprove?: boolean;
   }) => call<HarnessTabsState>(() => api.harness.permissionDefaults(o)),
   /**
-   * 模型目录：官方来源从 CLI 读（主进程缓存），第三方来源（source: 'thirdParty'）是网关里能给编程助手用的模型；
+   * 模型目录：官方来源从 CLI 读（主进程缓存），第三方来源（source: 'thirdParty'）是网关里能给 agent 用的模型；
    * 不支持切换模型的后端返回 null；refresh 强制重读
    */
   modelCatalog: (backend: HarnessBackend, opts: { refresh?: boolean; source?: TabSource } = {}) =>
     call<BackendModelCatalog | null>(() =>
       api.harness.modelCatalog({ backend, refresh: opts.refresh, source: opts.source }),
     ),
-  /** 切换标签来源；第三方时 model 是网关的 `供应商/模型`（省略 = 这个 CLI 分配的默认模型） */
-  setTabSource: (id: string, source: TabSource, model?: string) =>
+  /** 切换标签来源；第三方时 model 是网关的 `供应商/模型`（省略 = 这个 CLI 分配的默认模型）；官方时可带 accountId */
+  setTabSource: (id: string, source: TabSource, model?: string, accountId?: string | null) =>
     call<HarnessTabMeta>(() =>
-      api.harness.tabSource({ id, source, ...(model ? { model } : {}) }),
+      api.harness.tabSource({
+        id,
+        source,
+        ...(model ? { model } : {}),
+        ...(accountId !== undefined ? { accountId } : {}),
+      }),
     ).then((tab) => {
       // 换来源同时选了模型：同样是会话中途换模型
       if (model) noteModelSwitch(id, model);

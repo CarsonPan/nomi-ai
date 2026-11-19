@@ -5211,6 +5211,277 @@
     ]
    }
   },
+  "browserWindow.close": {
+   "kind": "mutation",
+   "dangerous": false,
+   "surfaces": [
+    "chat"
+   ],
+   "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+     }
+    },
+    "required": [
+     "id"
+    ]
+   },
+   "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "boolean"
+   }
+  },
+  "browserWindow.closeAll": {
+   "kind": "mutation",
+   "dangerous": false,
+   "surfaces": [
+    "chat"
+   ],
+   "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {}
+   },
+   "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "boolean"
+   }
+  },
+  "browserWindow.navigate": {
+   "kind": "mutation",
+   "dangerous": false,
+   "surfaces": [
+    "chat"
+   ],
+   "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+     },
+     "url": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8192
+     }
+    },
+    "required": [
+     "id",
+     "url"
+    ]
+   },
+   "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "boolean"
+   }
+  },
+  "browserWindow.reload": {
+   "kind": "mutation",
+   "dangerous": false,
+   "surfaces": [
+    "chat"
+   ],
+   "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+     }
+    },
+    "required": [
+     "id"
+    ]
+   },
+   "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "boolean"
+   }
+  },
+  "browserWindow.setRegion": {
+   "kind": "mutation",
+   "dangerous": false,
+   "surfaces": [
+    "chat"
+   ],
+   "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+     },
+     "region": {
+      "type": "object",
+      "properties": {
+       "x": {
+        "type": "number"
+       },
+       "y": {
+        "type": "number"
+       },
+       "width": {
+        "type": "number",
+        "minimum": 0
+       },
+       "height": {
+        "type": "number",
+        "minimum": 0
+       }
+      },
+      "required": [
+       "x",
+       "y",
+       "width",
+       "height"
+      ]
+     },
+     "visible": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "id",
+     "region",
+     "visible"
+    ]
+   },
+   "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "boolean"
+   }
+  },
+  "browserWindow.show": {
+   "kind": "mutation",
+   "dangerous": false,
+   "surfaces": [
+    "chat"
+   ],
+   "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+     },
+     "url": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8192
+     },
+     "region": {
+      "type": "object",
+      "properties": {
+       "x": {
+        "type": "number"
+       },
+       "y": {
+        "type": "number"
+       },
+       "width": {
+        "type": "number",
+        "minimum": 0
+       },
+       "height": {
+        "type": "number",
+        "minimum": 0
+       }
+      },
+      "required": [
+       "x",
+       "y",
+       "width",
+       "height"
+      ]
+     }
+    },
+    "required": [
+     "id",
+     "url",
+     "region"
+    ]
+   },
+   "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+     "ok": {
+      "type": "boolean"
+     },
+     "reason": {
+      "type": "string",
+      "enum": [
+       "unsupported",
+       "failed"
+      ]
+     },
+     "message": {
+      "type": "string",
+      "maxLength": 500
+     }
+    },
+    "required": [
+     "ok"
+    ],
+    "additionalProperties": false
+   }
+  },
+  "browserWindow.sync": {
+   "kind": "mutation",
+   "dangerous": false,
+   "surfaces": [
+    "chat"
+   ],
+   "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+     "ids": {
+      "maxItems": 64,
+      "type": "array",
+      "items": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 512
+      }
+     }
+    },
+    "required": [
+     "ids"
+    ]
+   },
+   "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+     "closed": {
+      "maxItems": 64,
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     }
+    },
+    "required": [
+     "closed"
+    ],
+    "additionalProperties": false
+   }
+  },
   "character.assets": {
    "kind": "query",
    "dangerous": false,
@@ -6553,6 +6824,161 @@
      "string",
      "null"
     ]
+   }
+  },
+  "cli.launcherGet": {
+   "kind": "query",
+   "dangerous": false,
+   "surfaces": [
+    "chat"
+   ],
+   "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema"
+   },
+   "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "propertyNames": {
+     "type": "string"
+    },
+    "additionalProperties": {
+     "type": "object",
+     "properties": {
+      "enabled": {
+       "type": "boolean"
+      },
+      "command": {
+       "type": "string",
+       "maxLength": 8192
+      },
+      "accountSource": {
+       "type": "string",
+       "enum": [
+        "local",
+        "nomi"
+       ]
+      },
+      "hasLocalLogin": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "enabled",
+      "command"
+     ],
+     "additionalProperties": false
+    }
+   }
+  },
+  "cli.launcherSet": {
+   "kind": "mutation",
+   "dangerous": true,
+   "surfaces": [
+    "chat"
+   ],
+   "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+     "kind": {
+      "type": "string"
+     },
+     "settings": {
+      "type": "object",
+      "properties": {
+       "enabled": {
+        "type": "boolean"
+       },
+       "command": {
+        "type": "string",
+        "maxLength": 8192
+       },
+       "accountSource": {
+        "type": "string",
+        "enum": [
+         "local",
+         "nomi"
+        ]
+       },
+       "hasLocalLogin": {
+        "type": "boolean"
+       }
+      },
+      "required": [
+       "enabled",
+       "command"
+      ]
+     }
+    },
+    "required": [
+     "kind",
+     "settings"
+    ]
+   },
+   "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+     "enabled": {
+      "type": "boolean"
+     },
+     "command": {
+      "type": "string",
+      "maxLength": 8192
+     },
+     "accountSource": {
+      "type": "string",
+      "enum": [
+       "local",
+       "nomi"
+      ]
+     },
+     "hasLocalLogin": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "enabled",
+     "command"
+    ],
+    "additionalProperties": false
+   }
+  },
+  "cli.launcherTest": {
+   "kind": "mutation",
+   "dangerous": true,
+   "surfaces": [
+    "chat"
+   ],
+   "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+     "kind": {
+      "type": "string"
+     },
+     "command": {
+      "type": "string",
+      "maxLength": 8192
+     }
+    },
+    "required": [
+     "kind",
+     "command"
+    ]
+   },
+   "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+     "version": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "version"
+    ],
+    "additionalProperties": false
    }
   },
   "cli.registry": {
@@ -8947,6 +9373,30 @@
       "type": "string",
       "minLength": 1
      },
+     "presetId": {
+      "type": "string",
+      "minLength": 1
+     },
+     "source": {
+      "type": "string",
+      "enum": [
+       "local",
+       "official",
+       "thirdParty"
+      ]
+     },
+     "accountId": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "model": {
+      "type": "string"
+     },
+     "reasoningEffort": {
+      "type": "string"
+     },
      "goal": {
       "type": "string",
       "minLength": 1,
@@ -8967,7 +9417,6 @@
      }
     },
     "required": [
-     "cli",
      "goal"
     ]
    },
@@ -8989,6 +9438,18 @@
      },
      "followUp": {
       "type": "boolean"
+     },
+     "background": {
+      "type": "boolean"
+     },
+     "tabId": {
+      "type": "string"
+     },
+     "cwd": {
+      "type": [
+       "string",
+       "null"
+      ]
      }
     },
     "required": [
@@ -9014,12 +9475,17 @@
        "null"
       ]
      },
+     "presetId": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
      "turnId": {
       "type": "string"
      }
     },
     "required": [
-     "cli",
      "turnId"
     ]
    },
@@ -9064,6 +9530,141 @@
       "additionalProperties": {
        "type": "string"
       }
+     },
+     "autoComplexity": {
+      "type": "boolean"
+     },
+     "presets": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "id": {
+         "type": "string"
+        },
+        "builtin": {
+         "type": "boolean"
+        },
+        "label": {
+         "type": "string"
+        },
+        "cli": {
+         "type": "string"
+        },
+        "source": {
+         "type": "string",
+         "enum": [
+          "local",
+          "official",
+          "thirdParty"
+         ]
+        },
+        "accountId": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "model": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "reasoningEffort": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "costTier": {
+         "type": "string",
+         "enum": [
+          "high",
+          "medium",
+          "low"
+         ]
+        }
+       },
+       "required": [
+        "id",
+        "label",
+        "cli",
+        "source"
+       ],
+       "additionalProperties": {}
+      }
+     },
+     "routes": {
+      "type": "object",
+      "propertyNames": {
+       "type": "string"
+      },
+      "additionalProperties": {
+       "anyOf": [
+        {
+         "type": "object",
+         "properties": {
+          "kind": {
+           "type": "string",
+           "const": "preset"
+          },
+          "presetId": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "kind",
+          "presetId"
+         ],
+         "additionalProperties": {}
+        },
+        {
+         "type": "object",
+         "properties": {
+          "kind": {
+           "type": "string",
+           "const": "custom"
+          },
+          "cli": {
+           "type": "string"
+          },
+          "source": {
+           "type": "string",
+           "enum": [
+            "local",
+            "official",
+            "thirdParty"
+           ]
+          },
+          "accountId": {
+           "type": [
+            "string",
+            "null"
+           ]
+          },
+          "model": {
+           "type": [
+            "string",
+            "null"
+           ]
+          },
+          "reasoningEffort": {
+           "type": [
+            "string",
+            "null"
+           ]
+          }
+         },
+         "required": [
+          "kind",
+          "cli",
+          "source"
+         ],
+         "additionalProperties": {}
+        }
+       ]
+      }
      }
     },
     "required": [
@@ -9107,6 +9708,150 @@
        "string",
        "null"
       ]
+     },
+     "autoComplexity": {
+      "type": "boolean"
+     },
+     "presets": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "id": {
+         "type": "string"
+        },
+        "builtin": {
+         "type": "boolean"
+        },
+        "label": {
+         "type": "string"
+        },
+        "cli": {
+         "type": "string"
+        },
+        "source": {
+         "type": "string",
+         "enum": [
+          "local",
+          "official",
+          "thirdParty"
+         ]
+        },
+        "accountId": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "model": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "reasoningEffort": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "costTier": {
+         "type": "string",
+         "enum": [
+          "high",
+          "medium",
+          "low"
+         ]
+        }
+       },
+       "required": [
+        "id",
+        "label",
+        "cli",
+        "source"
+       ],
+       "additionalProperties": {}
+      }
+     },
+     "routes": {
+      "type": "object",
+      "propertyNames": {
+       "type": "string"
+      },
+      "additionalProperties": {
+       "anyOf": [
+        {
+         "type": "object",
+         "properties": {
+          "kind": {
+           "type": "string",
+           "const": "preset"
+          },
+          "presetId": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "kind",
+          "presetId"
+         ],
+         "additionalProperties": {}
+        },
+        {
+         "type": "object",
+         "properties": {
+          "kind": {
+           "type": "string",
+           "const": "custom"
+          },
+          "cli": {
+           "type": "string"
+          },
+          "source": {
+           "type": "string",
+           "enum": [
+            "local",
+            "official",
+            "thirdParty"
+           ]
+          },
+          "accountId": {
+           "type": [
+            "string",
+            "null"
+           ]
+          },
+          "model": {
+           "type": [
+            "string",
+            "null"
+           ]
+          },
+          "reasoningEffort": {
+           "type": [
+            "string",
+            "null"
+           ]
+          }
+         },
+         "required": [
+          "kind",
+          "cli",
+          "source"
+         ],
+         "additionalProperties": {}
+        }
+       ]
+      }
+     },
+     "localAvailable": {
+      "type": "object",
+      "propertyNames": {
+       "type": "string"
+      },
+      "additionalProperties": {
+       "type": "boolean"
+      }
      }
     },
     "required": [
@@ -9154,6 +9899,18 @@
        },
        "followUp": {
         "type": "boolean"
+       },
+       "background": {
+        "type": "boolean"
+       },
+       "tabId": {
+        "type": "string"
+       },
+       "cwd": {
+        "type": [
+         "string",
+         "null"
+        ]
        }
       },
       "required": [
@@ -18130,6 +18887,7 @@
        "newTabSource": {
         "type": "string",
         "enum": [
+         "local",
          "official",
          "thirdParty"
         ]
@@ -18169,6 +18927,12 @@
      },
      "contextTier": {
       "type": "number"
+     },
+     "helperModel": {
+      "type": [
+       "string",
+       "null"
+      ]
      },
      "privacyMode": {
       "type": "boolean"
@@ -19840,6 +20604,7 @@
      "source": {
       "type": "string",
       "enum": [
+       "local",
        "official",
        "thirdParty"
       ]
@@ -22189,6 +22954,7 @@
      "expectSource": {
       "type": "string",
       "enum": [
+       "local",
        "official",
        "thirdParty"
       ]
@@ -22957,12 +23723,19 @@
      "source": {
       "type": "string",
       "enum": [
+       "local",
        "official",
        "thirdParty"
       ]
      },
      "model": {
       "type": "string"
+     },
+     "accountId": {
+      "type": [
+       "string",
+       "null"
+      ]
      }
     },
     "required": [
@@ -30099,7 +30872,27 @@
           "type": "string",
           "minLength": 1
          },
+         "source": {
+          "type": "string",
+          "enum": [
+           "local",
+           "official",
+           "thirdParty"
+          ]
+         },
+         "accountId": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "presetId": {
+          "type": "string"
+         },
          "model": {
+          "type": "string"
+         },
+         "reasoningEffort": {
           "type": "string"
          },
          "cwd": {
@@ -30121,7 +30914,6 @@
         },
         "required": [
          "kind",
-         "cli",
          "cwd",
          "isolation"
         ]
@@ -36924,6 +37716,43 @@
     }
    ]
   },
+  "browserWindow.closed": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "additionalProperties": false
+  },
+  "browserWindow.loaded": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "url": {
+     "type": "string"
+    },
+    "ok": {
+     "type": "boolean"
+    },
+    "message": {
+     "type": "string",
+     "maxLength": 500
+    }
+   },
+   "required": [
+    "id",
+    "ok"
+   ],
+   "additionalProperties": false
+  },
   "character.assetsChanged": {
    "$schema": "https://json-schema.org/draft/2020-12/schema",
    "type": "object",
@@ -37187,6 +38016,18 @@
     },
     "followUp": {
      "type": "boolean"
+    },
+    "background": {
+     "type": "boolean"
+    },
+    "tabId": {
+     "type": "string"
+    },
+    "cwd": {
+     "type": [
+      "string",
+      "null"
+     ]
     }
    },
    "required": [

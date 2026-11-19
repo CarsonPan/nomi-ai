@@ -13,7 +13,7 @@ type Procedure struct {
 	Surfaces  []string
 }
 
-// 合计 480：mutation 337 / query 138 / stream 5
+// 合计 490：mutation 346 / query 139 / stream 5
 var Procedures = []Procedure{
 	{Name: "agents.scan", Kind: "mutation", Dangerous: false, Surfaces: nil},
 	{Name: "agents.setSettings", Kind: "mutation", Dangerous: false, Surfaces: nil},
@@ -60,6 +60,13 @@ var Procedures = []Procedure{
 	{Name: "ai.userQuestion.pending", Kind: "query", Dangerous: false, Surfaces: []string{"chat"}},
 	{Name: "appIcon.get", Kind: "query", Dangerous: false, Surfaces: []string{"chat"}},
 	{Name: "appIcon.set", Kind: "mutation", Dangerous: false, Surfaces: []string{"chat"}},
+	{Name: "browserWindow.close", Kind: "mutation", Dangerous: false, Surfaces: []string{"chat"}},
+	{Name: "browserWindow.closeAll", Kind: "mutation", Dangerous: false, Surfaces: []string{"chat"}},
+	{Name: "browserWindow.navigate", Kind: "mutation", Dangerous: false, Surfaces: []string{"chat"}},
+	{Name: "browserWindow.reload", Kind: "mutation", Dangerous: false, Surfaces: []string{"chat"}},
+	{Name: "browserWindow.setRegion", Kind: "mutation", Dangerous: false, Surfaces: []string{"chat"}},
+	{Name: "browserWindow.show", Kind: "mutation", Dangerous: false, Surfaces: []string{"chat"}},
+	{Name: "browserWindow.sync", Kind: "mutation", Dangerous: false, Surfaces: []string{"chat"}},
 	{Name: "character.assets", Kind: "query", Dangerous: false, Surfaces: nil},
 	{Name: "character.ensureAssets", Kind: "mutation", Dangerous: false, Surfaces: nil},
 	{Name: "character.getActivePack", Kind: "query", Dangerous: false, Surfaces: nil},
@@ -80,6 +87,9 @@ var Procedures = []Procedure{
 	{Name: "chatWindow.dockTab", Kind: "mutation", Dangerous: false, Surfaces: []string{"chat"}},
 	{Name: "chatWindow.handoffPut", Kind: "mutation", Dangerous: false, Surfaces: []string{"chat"}},
 	{Name: "chatWindow.handoffTake", Kind: "mutation", Dangerous: false, Surfaces: []string{"chat"}},
+	{Name: "cli.launcherGet", Kind: "query", Dangerous: false, Surfaces: []string{"chat"}},
+	{Name: "cli.launcherSet", Kind: "mutation", Dangerous: true, Surfaces: []string{"chat"}},
+	{Name: "cli.launcherTest", Kind: "mutation", Dangerous: true, Surfaces: []string{"chat"}},
 	{Name: "cli.registry", Kind: "query", Dangerous: false, Surfaces: nil},
 	{Name: "cliAccount.list", Kind: "query", Dangerous: false, Surfaces: nil},
 	{Name: "cliAccount.loginCancel", Kind: "mutation", Dangerous: false, Surfaces: nil},
@@ -515,6 +525,8 @@ var Events = []string{
 	"ai.userProfile.changed",
 	"ai.userQuestion",
 	"avatar.event",
+	"browserWindow.closed",
+	"browserWindow.loaded",
 	"character.assetsChanged",
 	"chatAssets.changed",
 	"chatBg.changed",

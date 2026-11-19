@@ -1,5 +1,5 @@
 /**
- * 对话 UI 偏好：界面形态（normal = 没装编程助手，dev = 装了；由 services/cliPresence 写入，用户不手动切换）、
+ * 对话 UI 偏好：界面形态（normal = 没装 agent，dev = 装了；由 services/cliPresence 写入，用户不手动切换）、
  * 侧栏「全部|按端」、新对话是否用模型起标题。
  * 持久化在 localStorage（与 ConversationStore 同层）；桌面端无需主进程同步。
  */
@@ -84,7 +84,7 @@ export function setEndpointFilter(backend: ConversationBackend): void {
 const ENDPOINT_VIS_KEY = 'ai-chat:sidebarEndpoints';
 
 /**
- * 某个编程助手端点在侧栏「按端」里的显示方式：
+ * 某个 agent 端点在侧栏「按端」里的显示方式：
  * auto（默认，没有显式设置）= 有对话 / 标签 / 历史时才显示；show = 总是显示；hide = 不显示。
  * Nomi 总是显示，不参与设置。
  */
@@ -188,6 +188,60 @@ export function setWorkspaceCollapsed(key: string, collapsed: boolean): void {
   listSubs.forEach((fn) => fn());
 }
 
+// ───── 侧栏项目置顶 ─────
+const PINNED_PROJECTS_KEY = 'ai-chat:pinnedProjects';
+
+let pinnedProjectsCache: {
+  raw: string | null;
+  value: Readonly<Record<string, number>>;
+} = { raw: null, value: {} };
+
+/** 已置顶的项目映射（projectId → 置顶时间戳）；返回稳定引用供 useSyncExternalStore 使用 */
+export function getPinnedProjects(): Readonly<Record<string, number>> {
+  let raw: string | null = null;
+  try {
+    if (typeof window !== 'undefined' && window.localStorage)
+      raw = window.localStorage.getItem(PINNED_PROJECTS_KEY);
+  } catch {
+    raw = null;
+  }
+  if (raw === pinnedProjectsCache.raw) return pinnedProjectsCache.value;
+  const value: Record<string, number> = {};
+  try {
+    const o = raw ? (JSON.parse(raw) as unknown) : null;
+    if (o && typeof o === 'object' && !Array.isArray(o)) {
+      for (const [k, v] of Object.entries(o as Record<string, unknown>)) {
+        if (typeof v === 'number' && Number.isFinite(v) && v > 0) value[k] = v;
+      }
+    }
+  } catch {
+    /* 损坏的值按「无置顶」处理 */
+  }
+  pinnedProjectsCache = { raw, value };
+  return value;
+}
+
+export function setProjectPinned(projectId: string, pinned: boolean, ts = Date.now()): void {
+  const cur = { ...getPinnedProjects() };
+  if (pinned) {
+    cur[projectId] = ts > 0 ? ts : 1;
+    // 只留最近的 200 个，免得已删除项目一直堆在里面
+    const entries = Object.entries(cur);
+    if (entries.length > 200) {
+      entries.sort((a, b) => b[1] - a[1]);
+      const trimmed: Record<string, number> = {};
+      for (const [k, v] of entries.slice(0, 200)) trimmed[k] = v;
+      write(PINNED_PROJECTS_KEY, JSON.stringify(trimmed));
+      listSubs.forEach((fn) => fn());
+      return;
+    }
+  } else {
+    delete cur[projectId];
+  }
+  write(PINNED_PROJECTS_KEY, JSON.stringify(cur));
+  listSubs.forEach((fn) => fn());
+}
+
 // ───── 侧栏端点的排列顺序 ─────
 const ENDPOINT_ORDER_KEY = 'ai-chat:sidebarEndpointOrder';
 
@@ -196,7 +250,7 @@ let orderCache: { raw: string | null; value: ConversationBackend[] | null } = {
   value: null,
 };
 
-/** 用户拖拽后的编程助手端点顺序；null = 自动（按对话数从多到少）。Nomi 固定在最前，不在其中 */
+/** 用户拖拽后的 agent 端点顺序；null = 自动（按对话数从多到少）。Nomi 固定在最前，不在其中 */
 export function getEndpointOrder(): ConversationBackend[] | null {
   let raw: string | null = null;
   try {
@@ -253,8 +307,8 @@ export function orderEndpoints(
 const PROVIDER_ENDPOINT_KEY = 'ai-chat:providerEndpoint';
 const providerEpSubs = new Set<Listener>();
 
-/** 编程助手页的当前标签：内置编程助手端点之一，或「监视与会话」 */
-/** general = 运行环境与权限（编程助手页左栏）；旧版本存的 external（外部 CLI）不再认，回到默认 */
+/** agent 页的当前标签：内置 agent 端点之一，或「监视与会话」 */
+/** general = 运行环境与权限（agent 页左栏）；旧版本存的 external（外部 CLI）不再认，回到默认 */
 export type CodingTab = ConversationBackend | 'monitor' | 'delegate' | 'general';
 export const isCodingTab = (v: unknown): v is CodingTab =>
   v === 'monitor' || v === 'delegate' || v === 'general' || isConversationBackend(v);

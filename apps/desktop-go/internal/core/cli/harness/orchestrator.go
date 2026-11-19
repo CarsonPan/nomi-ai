@@ -1,6 +1,6 @@
 package harness
 
-// Orchestrator：编程助手标签的编排器（HarnessOrchestrator）。
+// Orchestrator：agent 标签的编排器（HarnessOrchestrator）。
 // 本文件是状态、构造、持久化、工作目录与 git / 工作区 / 斜杠命令的转发；
 // 标签管理、各后端会话、权限队列在 orchestrator_*.go。所有方法须在 jsrt 线程上调用（单线程语义）。
 // 标签元数据、消息都用 *util.Obj：键序固定，落盘 JSON 逐字节稳定。
@@ -70,6 +70,8 @@ type Deps struct {
 	GrokAcp                bool
 	CodexAppServer         bool
 	Complete               CompleteFn
+	// ClaudeConfigDir observes the actual configuration root reported by an official CLI launch.
+	ClaudeConfigDir func(dir string)
 	// CwdCheck：工作目录策略（不能过宽、不能在受保护文件夹里）；返回不能用的原因，"" = 能用。nil = 只查目录存在
 	CwdCheck func(dir string) string
 	// EnvAllow：用户放行、照样交给 CLI 的环境变量名（其余凭据类变量不继承，见 cli.ScrubSecretEnv）
@@ -84,8 +86,8 @@ type Deps struct {
 	// ProjectFor：dir 所在项目的 id（嵌套时取最具体的）；不在任何项目里返回 ""。
 	// 从本机历史打开的会话按工作目录归进项目
 	ProjectFor func(dir string) string
-	// ComputerMcp：编程助手可用的桌面操作 MCP（computer_mcp.go）；nil 或返回 nil = 不注入。
-	// label 是编程助手名（确认卡片上显示），readOnly = 计划模式（只给读界面的工具）
+	// ComputerMcp：agent 可用的桌面操作 MCP（computer_mcp.go）；nil 或返回 nil = 不注入。
+	// label 是 agent 名（确认卡片上显示），readOnly = 计划模式（只给读界面的工具）
 	ComputerMcp func(tabID, label string, readOnly bool) *McpLaunch
 }
 
@@ -219,7 +221,7 @@ type Orchestrator struct {
 	stopBeforeStart  map[string]bool
 	sendAborts       map[string]*jsrt.AbortController
 	takeoverInFlight map[string]*jsrt.Promise[struct{}]
-	// delegatedSessions：Nomi 委派用过的编程助手会话（backend:sessionId）：不出现在编程助手的历史里（orchestrator_delegated.go）
+	// delegatedSessions：Nomi 委派用过的 agent 会话（backend:sessionId）：不出现在 agent 的历史里（orchestrator_delegated.go）
 	delegatedSessions map[string]bool
 	eventBatcher      *cli.EventBatcher
 	childStage        map[string]string // 直接发给 Codex 子代理的图片暂存目录（标签 + 线程 → 目录），子代理这一轮结束时清掉
@@ -262,10 +264,12 @@ type Orchestrator struct {
 	recent                                         []string
 	writer                                         *utils.FileWriter
 	sessionModels                                  *cli.SessionModelTable
-	tabFileBytes                                   map[string]int
-	broadcastQueued                                bool
-	disposed                                       bool
-	sbx                                            sbxState
+	// autoMode：哪些端点 + 模型上「自动」档实测跑不通（cli.AutoModeTable）
+	autoMode        *cli.AutoModeTable
+	tabFileBytes    map[string]int
+	broadcastQueued bool
+	disposed        bool
+	sbx             sbxState
 	// turnOrigin：标签当前这一轮是谁发起的（TabFinished.Origin）；nextOrigin：下一次 SendTab 的发起方（沙箱续跑）
 	turnOrigin, nextOrigin map[string]string
 	events                 *emitter
@@ -298,7 +302,7 @@ type emitter struct{ ls map[string][]*func(any) }
 
 func (e *emitter) On(ev string, fn func(any)) { e.onOff(ev, fn) }
 
-// OnOff：订阅并返回取消函数（持续任务的编程助手执行者用）
+// OnOff：订阅并返回取消函数（持续任务的 agent 执行者用）
 func (e *emitter) OnOff(ev string, fn func(any)) func() { return e.onOff(ev, fn) }
 
 // onOff = on，返回对应的 off。
@@ -370,6 +374,7 @@ func New(d Deps) *Orchestrator {
 	o.tabsDir = filepath.Join(d.Root, "tabs")
 	o.recentPath = filepath.Join(d.Root, "recent-cwds.json")
 	o.sessionModels = cli.NewSessionModelTable(d.Root, func(msg string, e error) { d.Logger.Warn(msg, e) })
+	o.autoMode = cli.NewAutoModeTable(d.Root, func(msg string, e error) { d.Logger.Warn(msg, e) })
 	o.writer = utils.NewFileWriter(persistDebounceMs, func(file string, e error) {
 		d.Logger.Warn("harness persist failed", util.NewObj("file", filepath.Base(file), "e", errString(e)))
 	})
@@ -765,6 +770,8 @@ func (o *Orchestrator) load() {
 				}
 				restored.Set("status", st)
 				restored.Set("unread", jsNumberOr0(tab.Get("unread")))
+				// 完成点不跨重启：重新打开应用时谁也不想看到一屏「刚完成」
+				restored.Delete("finished")
 				pm, _ := tab.Lookup("permissionMode")
 				if _, has := tab.Lookup("permissionMode"); !has {
 					pm = util.Undefined
@@ -1131,7 +1138,7 @@ func (o *Orchestrator) State() *util.Obj {
 	// bins 现查（命中走缓存；没找到的 10 秒后重查）：装完 CLI 后侧栏再取一次就能看到，不用重启
 	bins := util.NewObj()
 	for _, b := range builtin.Ordered {
-		if p := ResolveHarnessBin(b); p != "" {
+		if p := ResolveEffectiveHarnessBin(b); p != "" {
 			bins.Set(b, p)
 		} else {
 			bins.Set(b, nil)
